@@ -16,6 +16,18 @@ RVCAMP_DEV=0 RVCAMP_PEPPER=$(python3 -c "import secrets;print(secrets.token_hex(
 - 管理后台：http://127.0.0.1:8000/admin（生产用 `RVCAMP_ADMIN_PATH` 改成随机串）
 - 日志：`data/logs/rvcamp.log`
 
+## 版本存档
+
+每次迭代完，一条命令把改动推到 GitHub 留档：
+
+```bash
+./save.sh "修复了底图白板 bug"     # 提交 + 推送
+./save.sh                          # 不带说明：先列出改动，再问你要不要提交
+```
+
+`data/` 目录（数据库、上传图片、日志、瓦片缓存、演示凭证）已被 `.gitignore`
+排除，存档只会上传代码，不会把用户数据带到 GitHub。
+
 ## 两个端，同一套密钥体系
 
 | | 用户端 `/` | 管理后台 `/admin` |
