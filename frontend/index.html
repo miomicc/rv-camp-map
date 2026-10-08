@@ -1,0 +1,1732 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>营地地图 · 房车露营营地共享平台</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css">
+<!-- 矢量底图（OpenFreeMap）需要 MapLibre 渲染，栅格底图不需要 -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/5.6.0/maplibre-gl.css">
+<style>
+:root{
+  --green:#2E6B4F; --green-d:#1F4A36; --green-l:#E8F1EC;
+  --orange:#D97A3D; --orange-l:#FBEFE6;
+  --blue:#3B7DD8; --purple:#8B5CF6; --gold:#C9A227; --red:#D64545;
+  --ink:#1F2421; --ink-2:#5A625D; --ink-3:#8A918C;
+  --bg:#F7F6F3; --card:#FFFFFF; --line:#E3E1DC; --line-2:#D2CFC8;
+  --shadow:0 2px 8px rgba(31,36,33,.08); --shadow-lg:0 8px 32px rgba(31,36,33,.16);
+  --r:10px; --r-lg:14px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;color:var(--ink);background:var(--bg);overflow:hidden}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+input,select,textarea{font-family:inherit;font-size:14px}
+#map{position:absolute;inset:0;z-index:1}
+
+/* ---------- 通用控件 ---------- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:38px;padding:0 16px;border-radius:var(--r);font-size:14px;font-weight:500;transition:.15s;white-space:nowrap}
+.btn-primary{background:var(--green);color:#fff}
+.btn-primary:hover{background:var(--green-d)}
+.btn-ghost{background:rgba(255,255,255,.94);border:1px solid var(--line-2);color:var(--ink)}
+.btn-ghost:hover{background:#fff;border-color:var(--green)}
+.btn-orange{background:var(--orange);color:#fff}
+.btn-orange:hover{filter:brightness(.93)}
+.btn-sm{height:32px;padding:0 12px;font-size:13px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow)}
+
+/* ---------- 顶栏 ---------- */
+.topbar{position:absolute;top:14px;left:14px;z-index:600;display:flex;gap:10px;align-items:flex-start;max-width:calc(100% - 28px)}
+.brand{display:flex;align-items:center;gap:10px;height:46px;padding:0 16px 0 12px}
+.brand-mark{width:30px;height:30px;border-radius:9px;background:linear-gradient(145deg,var(--green),#3E8A66);display:grid;place-items:center;flex:0 0 auto}
+.brand-mark svg{width:17px;height:17px}
+.brand-txt b{display:block;font-size:15px;font-weight:600;letter-spacing:.2px;line-height:1.1}
+.brand-txt span{display:block;font-size:11px;color:var(--ink-3);margin-top:2px}
+.search{display:flex;align-items:center;gap:8px;height:46px;padding:0 14px;min-width:230px}
+.search svg{width:16px;height:16px;flex:0 0 auto;color:var(--ink-3)}
+.search input{border:none;outline:none;background:none;width:100%;font-size:14px}
+.mode-chip{height:23px;padding:0 8px;border-radius:20px;font-size:10.5px;font-weight:600;display:inline-flex;align-items:center;gap:4px;letter-spacing:.3px}
+.chip-live{background:var(--green-l);color:var(--green-d)}
+.chip-demo{background:var(--orange-l);color:#9C5117}
+
+/* ---------- 右上账户区 ---------- */
+.acct{position:absolute;top:14px;right:14px;z-index:600;display:flex;gap:8px;align-items:center}
+.acct-btn{display:flex;align-items:center;gap:8px;height:46px;padding:0 14px;font-size:14px;font-weight:500}
+.avatar{width:28px;height:28px;border-radius:50%;background:var(--green);color:#fff;display:grid;place-items:center;font-size:12.5px;font-weight:600;flex:0 0 auto}
+.badge-vip{height:19px;padding:0 7px;border-radius:20px;background:linear-gradient(135deg,#E0B84C,#C9A227);color:#4A3A00;font-size:10.5px;font-weight:700;display:inline-flex;align-items:center}
+
+/* ---------- 底图切换 ---------- */
+.tileswitch{position:absolute;top:68px;right:14px;z-index:600;display:flex;gap:4px;padding:5px;max-width:calc(100% - 320px);overflow-x:auto;scrollbar-width:none}
+.tileswitch::-webkit-scrollbar{display:none}
+.tp-btn{flex:0 0 auto;height:28px;padding:0 11px;border:0;border-radius:7px;background:transparent;color:var(--ink-2);font-size:12px;font-family:inherit;cursor:pointer;white-space:nowrap;transition:.12s}
+.tp-btn:hover{background:var(--bg);color:var(--ink)}
+.tp-btn.on{background:var(--green);color:#fff;font-weight:600}
+.tp-btn.dev{color:var(--ink-3)}
+.tp-btn.dev.on{background:var(--orange)}
+/* 矢量底图画布：不吃鼠标事件，否则标记点点不动 */
+.leaflet-maplibre-gl canvas{outline:none}
+
+/* ---------- 左侧筛选面板 ---------- */
+.sidebar{position:absolute;top:74px;left:14px;z-index:600;width:250px;max-height:calc(100% - 260px);overflow:auto;padding:14px}
+.sidebar h3{margin:0 0 10px;font-size:12px;font-weight:600;color:var(--ink-3);letter-spacing:.6px;text-transform:uppercase}
+.filter-row{display:flex;align-items:center;gap:8px;padding:6px 4px;border-radius:7px;font-size:13.5px;cursor:pointer;transition:.12s}
+.filter-row:hover{background:var(--bg)}
+.filter-row input{accent-color:var(--green);width:15px;height:15px;cursor:pointer}
+.dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto}
+.stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+.stat{padding:9px 10px;background:var(--bg);border-radius:8px}
+.stat b{display:block;font-size:17px;font-weight:600;color:var(--green-d);line-height:1.2}
+.stat span{font-size:11px;color:var(--ink-3)}
+.fac-list{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.fac{padding:3px 8px;border-radius:6px;background:var(--bg);border:1px solid var(--line);font-size:11.5px;color:var(--ink-2);cursor:pointer;transition:.12s;user-select:none}
+.fac.on{background:var(--green-l);border-color:#9FC7B2;color:var(--green-d);font-weight:500}
+
+/* ---------- 右侧抽屉 ---------- */
+.drawer{position:absolute;top:0;right:0;bottom:0;width:392px;max-width:100%;z-index:700;background:var(--card);box-shadow:var(--shadow-lg);transform:translateX(103%);transition:transform .26s cubic-bezier(.32,.72,.32,1);display:flex;flex-direction:column}
+.drawer.open{transform:none}
+.drawer-head{padding:16px 18px 14px;border-bottom:1px solid var(--line);flex:0 0 auto}
+.drawer-body{flex:1;overflow-y:auto;padding:16px 18px 24px}
+.drawer-close{position:absolute;top:14px;right:14px;width:30px;height:30px;border-radius:8px;display:grid;place-items:center;color:var(--ink-3)}
+.drawer-close:hover{background:var(--bg);color:var(--ink)}
+.tag{display:inline-flex;align-items:center;height:21px;padding:0 8px;border-radius:6px;font-size:11.5px;font-weight:500;background:var(--green-l);color:var(--green-d)}
+.tag-gray{background:var(--bg);color:var(--ink-2);border:1px solid var(--line)}
+.h2{font-size:19px;font-weight:600;line-height:1.3;margin:6px 0 8px;padding-right:34px}
+.score{display:flex;align-items:center;gap:5px;font-size:13px;color:var(--ink-2)}
+.score b{font-size:15px;color:var(--orange);font-weight:600}
+.stars{display:inline-flex;gap:1px}
+.star-full{color:#E8A33D}.star-empty{color:var(--line-2)}
+.kv{display:flex;gap:10px;padding:11px 0;border-bottom:1px solid var(--line);font-size:13.5px;align-items:flex-start}
+.kv:last-child{border-bottom:none}
+.kv-k{flex:0 0 58px;color:var(--ink-3);font-size:12.5px;padding-top:1px}
+.kv-v{flex:1;color:var(--ink);word-break:break-all;line-height:1.5}
+.kv-v.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px}
+.sec-t{margin:20px 0 10px;font-size:12px;font-weight:600;color:var(--ink-3);letter-spacing:.6px;text-transform:uppercase}
+.fac-tags{display:flex;flex-wrap:wrap;gap:6px}
+.fac-tag{padding:5px 10px;border-radius:7px;background:var(--green-l);color:var(--green-d);font-size:12.5px;font-weight:500}
+.detail-txt{font-size:13.5px;line-height:1.75;color:var(--ink-2);white-space:pre-wrap}
+
+/* 锁定遮罩 —— 商业模式的可视化落点 */
+.locked{position:relative;border-radius:var(--r);overflow:hidden;padding:2px 0}
+.locked-inner{filter:blur(5px);opacity:.55;pointer-events:none;user-select:none}
+.locked-mask{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;text-align:center;padding:12px;background:rgba(255,255,255,.55)}
+.locked-mask svg{width:22px;height:22px;color:var(--green)}
+.locked-mask b{font-size:13.5px;font-weight:600}
+.locked-mask small{font-size:12px;color:var(--ink-2);max-width:230px;line-height:1.5}
+
+/* 评星 */
+.rate-box{margin-top:8px;padding:13px;background:var(--bg);border-radius:var(--r)}
+.rate-stars{display:flex;gap:3px;margin:8px 0 10px}
+.rate-stars button{font-size:23px;line-height:1;color:var(--line-2);transition:.12s}
+.rate-stars button.on{color:#E8A33D;transform:scale(1.06)}
+.rate-box textarea{width:100%;min-height:62px;padding:9px 10px;border:1px solid var(--line-2);border-radius:8px;resize:vertical;outline:none;background:#fff}
+.rate-box textarea:focus{border-color:var(--green)}
+.rate-actions{display:flex;gap:8px;margin-top:10px}
+.review{padding:11px 0;border-bottom:1px solid var(--line);font-size:13px}
+.review:last-child{border-bottom:none}
+.review-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.review-h b{font-size:12.5px;font-weight:600}
+.review-h span{font-size:11.5px;color:var(--ink-3)}
+
+/* ---------- 图例 / 底部 ---------- */
+.legend{position:absolute;left:14px;bottom:14px;z-index:600;padding:11px 14px;font-size:12px}
+.legend-row{display:flex;align-items:center;gap:8px;padding:3px 0;color:var(--ink-2)}
+.tip{position:absolute;bottom:18px;left:50%;transform:translateX(-50%);z-index:590;padding:9px 16px;border-radius:22px;background:rgba(31,36,33,.9);color:#fff;font-size:13px;display:flex;align-items:center;gap:8px;box-shadow:var(--shadow)}
+.zoombar{position:absolute;right:14px;bottom:14px;z-index:600;display:flex;flex-direction:column;gap:2px;padding:4px}
+.zoombar button{width:38px;height:38px;display:grid;place-items:center;border-radius:8px;font-size:19px;color:var(--ink-2)}
+.zoombar button:hover{background:var(--bg);color:var(--green)}
+
+/* ---------- 模态 ---------- */
+.modal{position:fixed;inset:0;z-index:1000;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(31,36,33,.42)}
+.modal.open{display:flex}
+.modal-card{width:100%;max-width:452px;max-height:88vh;overflow-y:auto;background:var(--card);border-radius:16px;box-shadow:var(--shadow-lg);animation:pop .2s ease}
+@keyframes pop{from{transform:scale(.96);opacity:0}to{transform:scale(1);opacity:1}}
+.modal-head{padding:20px 22px 0}
+.modal-head h2{margin:0 0 5px;font-size:18px;font-weight:600}
+.modal-head p{margin:0;font-size:13px;color:var(--ink-2);line-height:1.5}
+.modal-body{padding:18px 22px 22px}
+.field{margin-bottom:13px}
+.field label{display:block;font-size:12.5px;font-weight:500;color:var(--ink-2);margin-bottom:6px}
+.field input,.field select,.field textarea{width:100%;height:40px;padding:0 11px;border:1px solid var(--line-2);border-radius:8px;outline:none;background:#fff;transition:.15s}
+.field textarea{height:auto;min-height:72px;padding:9px 11px;resize:vertical;line-height:1.55}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(46,107,79,.1)}
+.field-2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.coord-hint{padding:9px 11px;background:var(--green-l);border-radius:8px;font-size:12px;color:var(--green-d);display:flex;align-items:center;gap:7px;margin-bottom:13px;line-height:1.5}
+.plan{display:flex;justify-content:space-between;align-items:center;padding:14px;border:1.5px solid var(--line-2);border-radius:var(--r);margin-bottom:10px;cursor:pointer;transition:.15s}
+.plan:hover{border-color:var(--green)}
+.plan.on{border-color:var(--green);background:var(--green-l)}
+.plan-l b{display:block;font-size:14.5px;font-weight:600;margin-bottom:3px}
+.plan-l span{font-size:12px;color:var(--ink-2)}
+.plan-r{text-align:right}
+.plan-r b{display:block;font-size:19px;font-weight:600;color:var(--orange);line-height:1.1}
+.plan-r span{font-size:11px;color:var(--ink-3)}
+.toast{position:fixed;top:74px;left:50%;transform:translateX(-50%) translateY(-14px);z-index:2000;padding:11px 18px;border-radius:10px;background:rgba(31,36,33,.94);color:#fff;font-size:13.5px;opacity:0;transition:.24s;pointer-events:none;box-shadow:var(--shadow-lg);max-width:calc(100% - 40px);text-align:center;line-height:1.5}
+.toast.show{opacity:1;transform:translateX(-50%)}
+.toast.err{background:#B03A3A}
+.toast.ok{background:#256B4C}
+.pending-item{padding:13px;border:1px solid var(--line);border-radius:var(--r);margin-bottom:10px}
+.pending-item .t{font-size:14px;font-weight:600;margin-bottom:4px}
+.pending-item .m{font-size:12px;color:var(--ink-2);line-height:1.6;margin-bottom:9px}
+.pending-item .a{display:flex;gap:8px}
+.empty{text-align:center;padding:40px 20px;color:var(--ink-3);font-size:13.5px;line-height:1.6}
+.tab-btn{flex:1;height:34px;border-radius:7px;font-size:13.5px;font-weight:500;color:var(--ink-2);transition:.15s}
+.tab-btn.on{background:#fff;color:var(--green-d);box-shadow:0 1px 3px rgba(31,36,33,.1)}
+.tab-btn:hover{color:var(--green-d)}
+.key-row{display:flex;gap:10px;padding:11px 0;border-bottom:1px solid var(--line);font-size:13.5px;align-items:center}
+.key-row:last-child{border-bottom:none}
+.key-k{flex:0 0 66px;color:var(--ink-3);font-size:12.5px}
+.key-v{flex:1;color:var(--ink);word-break:break-all}
+.key-v.mono{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;letter-spacing:.4px}
+.member-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+.member-table th{text-align:center;padding:9px 6px;font-weight:600;font-size:12.5px;color:var(--ink-2);border-bottom:1.5px solid var(--line-2)}
+.member-table th:first-child{text-align:left}
+.member-table td{padding:9px 6px;text-align:center;border-bottom:1px solid var(--line)}
+.member-table td:first-child{text-align:left;color:var(--ink-2)}
+.member-table tr.hl{background:var(--green-l)}
+.member-table tr.hl td:first-child{font-weight:600;color:var(--green-d)}
+.yes{color:var(--green);font-weight:600}
+.no{color:var(--line-2)}
+
+/* ---- 图片上传 ---- */
+.drop-zone{border:1.5px dashed var(--line-2);border-radius:var(--r);padding:20px 14px;text-align:center;color:var(--ink-3);cursor:pointer;transition:.15s;background:var(--bg)}
+.drop-zone:hover,.drop-zone.drag{border-color:var(--green);background:var(--green-l);color:var(--green-d)}
+.thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(74px,1fr));gap:8px;margin-top:10px}
+.thumb{position:relative;aspect-ratio:1;border-radius:9px;overflow:hidden;background:var(--bg);border:1px solid var(--line)}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.thumb.uploading img{opacity:.35}
+.thumb.failed{border-color:var(--red);background:#FCEBEB}
+.thumb.failed::after{content:'×';position:absolute;inset:0;display:grid;place-items:center;color:var(--red);font-size:24px;font-weight:600}
+.thumb-spin{position:absolute;inset:0;display:grid;place-items:center}
+.thumb-spin::after{content:'';width:20px;height:20px;border:2px solid var(--line-2);border-top-color:var(--green);border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.thumb-del{position:absolute;top:3px;right:3px;width:20px;height:20px;border-radius:50%;background:rgba(31,36,33,.72);color:#fff;font-size:13px;line-height:1;display:grid;place-items:center;padding:0}
+.thumb-del:hover{background:var(--red)}
+.gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:8px}
+.gallery img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:9px;border:1px solid var(--line);cursor:zoom-in;transition:.15s}
+.gallery img:hover{border-color:var(--green);transform:scale(1.02)}
+.lightbox{position:fixed;inset:0;z-index:1500;display:none;align-items:center;justify-content:center;background:rgba(20,24,22,.88);padding:34px}
+.lightbox.open{display:flex}
+.lightbox img{max-width:100%;max-height:100%;border-radius:8px}
+.lightbox-close{position:absolute;top:18px;right:22px;width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.14);color:#fff;font-size:20px;display:grid;place-items:center}
+.lightbox-close:hover{background:rgba(255,255,255,.26)}
+
+/* 自定义标记 */
+.pin{width:30px;height:38px;position:relative;filter:drop-shadow(0 2px 4px rgba(0,0,0,.28))}
+.pin svg{width:100%;height:100%;display:block}
+.cluster-ico{width:38px;height:38px;border-radius:50%;background:rgba(46,107,79,.92);border:2.5px solid rgba(255,255,255,.9);color:#fff;display:grid;place-items:center;font-size:12.5px;font-weight:600;box-shadow:0 2px 8px rgba(31,36,33,.3)}
+.pick-hint{position:fixed;top:0;left:0;right:0;z-index:900;padding:13px;background:var(--green);color:#fff;text-align:center;font-size:14px;display:none;align-items:center;justify-content:center;gap:14px}
+.pick-hint.show{display:flex}
+.crosshair{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:890;pointer-events:none;display:none}
+.crosshair.show{display:block}
+.leaflet-control-attribution{font-size:10px!important;background:rgba(255,255,255,.82)!important}
+.marker-cluster-small,.marker-cluster-medium,.marker-cluster-large{background:rgba(46,107,79,.22)!important}
+.marker-cluster-small div,.marker-cluster-medium div,.marker-cluster-large div{background:rgba(46,107,79,.9)!important;color:#fff!important;font-weight:600!important;font-size:12.5px!important}
+/* 全局搜索结果面板 */
+.search{position:relative}
+.q-clear{display:none;position:absolute;right:8px;top:50%;transform:translateY(-50%);width:20px;height:20px;border-radius:50%;border:0;background:var(--line);color:var(--ink-2);font-size:14px;line-height:1;cursor:pointer}
+.q-clear:hover{background:var(--line-2);color:var(--ink)}
+.search-panel{display:none;position:absolute;top:calc(100% + 7px);left:0;right:0;z-index:800;background:var(--card);border:1px solid var(--line);border-radius:11px;box-shadow:0 12px 30px rgba(31,36,33,.16);max-height:52vh;overflow:auto;padding:6px}
+.search-panel.show{display:block}
+.sp-item{display:flex;gap:9px;align-items:center;padding:9px 10px;border-radius:8px;cursor:pointer}
+.sp-item:hover{background:var(--bg)}
+.sp-item .sp-ico{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;flex:none;background:var(--green-l);color:var(--green-d);font-size:12px}
+.sp-item .sp-main{flex:1;min-width:0}
+.sp-item .sp-name{font-size:13.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sp-item .sp-sub{font-size:11.5px;color:var(--ink-3);margin-top:2px}
+.sp-foot{padding:8px 10px;font-size:11.5px;color:var(--ink-3);border-top:1px solid var(--line);margin-top:4px}
+
+/* 通知 */
+.bell{position:relative}
+.bell .dot{position:absolute;top:6px;right:7px;min-width:15px;height:15px;border-radius:8px;background:var(--red);color:#fff;font-size:10px;font-weight:600;display:none;place-items:center;padding:0 3px}
+.bell .dot.on{display:grid}
+.notice{display:flex;gap:10px;padding:11px;border-radius:9px;border:1px solid var(--line);margin-bottom:8px;background:var(--card)}
+.notice.unread{background:var(--green-l);border-color:transparent}
+.notice .n-body{flex:1;min-width:0}
+.notice .n-title{font-size:13.5px;font-weight:600;margin-bottom:3px}
+.notice .n-text{font-size:12.5px;color:var(--ink-2);line-height:1.65}
+.notice .n-time{font-size:11px;color:var(--ink-3);margin-top:5px}
+
+/* 我的提交 */
+.myspot{display:flex;gap:10px;align-items:center;padding:10px 11px;border:1px solid var(--line);border-radius:9px;margin-bottom:8px}
+.myspot .st{font-size:11.5px;padding:2px 8px;border-radius:20px;font-weight:600}
+.st-0{background:var(--orange-l);color:#8A4A14}
+.st-1{background:var(--green-l);color:var(--green-d)}
+.st-2{background:#FDECEC;color:#B33}
+.st-3{background:var(--bg);color:var(--ink-3)}
+
+@media(max-width:820px){
+  .search{min-width:0;width:150px}
+  .brand-txt span{display:none}
+  .sidebar{display:none}
+  .legend{display:none}
+  .drawer{width:100%}
+  .acct-btn span.lbl{display:none}
+}
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<!-- 顶栏 -->
+<div class="topbar">
+  <div class="panel brand">
+    <div class="brand-mark">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 20V9l9-6 9 6v11"/><path d="M9 20v-6h6v6"/>
+      </svg>
+    </div>
+    <div class="brand-txt">
+      <b>营地地图</b>
+      <span>房车露营营地共享平台</span>
+    </div>
+  </div>
+  <div class="panel search">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+      <circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>
+    </svg>
+    <input id="q" placeholder="搜索营地名称 / 城市（全国）" autocomplete="off">
+    <button class="q-clear" id="qClear" onclick="clearSearch()" title="清空">×</button>
+    <!-- 搜索结果面板：直接查全库，不再只匹配当前视野 -->
+    <div class="search-panel" id="searchPanel"></div>
+  </div>
+  <div class="panel search" style="min-width:auto;padding:0 12px;gap:6px" id="modeChip"></div>
+</div>
+
+<!-- 账户区 -->
+<div class="acct" id="acct"></div>
+
+<!-- 底图切换 -->
+<div class="panel tileswitch" id="tileSwitch"></div>
+
+<!-- 左侧筛选 -->
+<div class="panel sidebar" id="sidebar">
+  <h3>营地类型</h3>
+  <div id="typeFilters"></div>
+  <h3 style="margin-top:16px">设施筛选</h3>
+  <div class="fac-list" id="facFilters"></div>
+  <div class="stat-grid">
+    <div class="stat"><b id="stTotal">0</b><span>当前视野营地</span></div>
+    <div class="stat"><b id="stZoom">5</b><span>缩放级别</span></div>
+  </div>
+</div>
+
+<!-- 图例 -->
+<div class="panel legend" id="legend"></div>
+
+<!-- 操作提示 -->
+<div class="tip" id="tip">点击地图任意位置即可添加营地</div>
+
+<!-- 缩放条 -->
+<div class="panel zoombar" id="zoombar">
+  <button onclick="map.zoomIn()" title="放大">+</button>
+  <button onclick="map.zoomOut()" title="缩小">−</button>
+  <button onclick="locateMe()" title="定位到我">◎</button>
+</div>
+
+<!-- 详情抽屉 -->
+<div class="drawer" id="drawer">
+  <button class="drawer-close" onclick="closeDrawer()">
+    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+  </button>
+  <div class="drawer-head" id="drawerHead"></div>
+  <div class="drawer-body" id="drawerBody"></div>
+</div>
+
+<!-- 选点提示 -->
+<div class="pick-hint" id="pickHint">
+  <span>请在地图上点击营地所在位置</span>
+  <button class="btn btn-sm" style="background:rgba(255,255,255,.2);color:#fff" onclick="cancelPick()">取消</button>
+</div>
+<div class="crosshair" id="crosshair">
+  <svg width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="#2E6B4F" stroke-width="2">
+    <circle cx="20" cy="20" r="9"/><path d="M20 2v9M20 29v9M2 20h9M29 20h9" stroke-linecap="round"/>
+  </svg>
+</div>
+
+<div class="modal" id="modal"><div class="modal-card" id="modalCard"></div></div>
+<div class="lightbox" id="lightbox" onclick="closeLightbox()">
+  <button class="lightbox-close" onclick="closeLightbox()">×</button>
+  <img id="lightboxImg" alt="营地照片" onclick="event.stopPropagation()">
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/5.6.0/maplibre-gl.js"></script>
+<!-- 把 MapLibre 画布挂进 Leaflet 的图层体系，这样才能和标记点一起平移缩放 -->
+<script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.1.4/leaflet-maplibre-gl.js"></script>
+<script>
+/* ==========================================================================
+   营地地图 · 前端
+   底图：OpenFreeMap 矢量瓦片（MapLibre 渲染，WGS-84），标准 / 淡色两种风格
+        坐标系跟随底图自动切换，标记点渲染与上报都做对应换算
+   数据：优先走后端 API；后端不可达时自动降级为内置演示数据
+   ========================================================================== */
+
+const API = (location.protocol === 'file:' || !location.port) ? 'http://127.0.0.1:8000' : location.origin;
+let TOKEN = localStorage.getItem('rv_token') || '';
+let ME = null;
+let API_OK = false;
+
+const TYPES = [
+  {name:'房车营地',   color:'#2E6B4F'},
+  {name:'高速服务区', color:'#3B7DD8'},
+  {name:'野外驻车点', color:'#D97A3D'},
+  {name:'营地酒店',   color:'#8B5CF6'},
+  {name:'农家乐营地', color:'#C9A227'},
+];
+const TYPE_COLOR = Object.fromEntries(TYPES.map(t => [t.name, t.color]));
+const FACILITIES = ['水电桩','排污口','淋浴','卫生间','洗衣房','充电桩','WiFi','餐厅','便利店','儿童设施','宠物友好','24小时门禁'];
+
+const state = {
+  typeOn: new Set(TYPES.map(t => t.name)),
+  facOn: new Set(),
+  kw: '',
+  spots: [],
+  picking: false,
+  currentId: null,
+};
+
+// 免费用户每天可查看的营地详情条数，启动时从 /api/meta 取真实值
+let QUOTA_LIMIT = 3;
+
+/* ---------------- 内置演示数据（后端不可用时使用） ---------------- */
+const DEMO_SPOTS = [
+  {id:1,name:'北京奥森房车营地',lng:116.3975,lat:39.9087,spot_type:'房车营地',province:'北京市',city:'朝阳区',verify_score:4.6,verify_count:18,locked:true,address:'朝阳区奥***',phone:'',price_range:'',facilities:[],detail:'',contact_locked:true},
+  {id:2,name:'延庆玉渡山露营地',lng:115.8456,lat:40.4567,spot_type:'野外驻车点',province:'北京市',city:'延庆区',verify_score:4.2,verify_count:9,locked:true,address:'延庆区玉***',phone:'',price_range:'',facilities:[],detail:'',contact_locked:true},
+  {id:3,name:'张北草原天路驿站',lng:114.72,lat:41.16,spot_type:'野外驻车点',province:'河北省',city:'张北县',verify_score:4.8,verify_count:32,locked:true,address:'张北县草***',phone:'',price_range:'',facilities:[],detail:'',contact_locked:true},
+  {id:4,name:'北戴河海滨房车营',lng:119.484,lat:39.828,spot_type:'房车营地',province:'河北省',city:'秦皇岛市',verify_score:4.4,verify_count:21,locked:true,address:'北戴河区***',phone:'',price_range:'',facilities:[],detail:'',contact_locked:true},
+  {id:5,name:'上海崇明岛生态营地',lng:121.3974,lat:31.6268,spot_type:'房车营地',province:'上海市',city:'崇明区',verify_score:4.7,verify_count:26,locked:true,address:'崇明区东***',phone:'',price_range:'',facilities:[],detail:'',contact_locked:true},
+  {id:6,name:'杭州千岛湖环湖营地',lng:119.0417,lat:29.61,spot_type:'房车营地',province:'浙江省',city:'淳安县',verify_score:4.5,verify_count:15,locked:true,address:'淳安县千***',phone:'',price_range:'',facilities:[],detail:'',contact_locked:true},
+  {id:7,name:'莫干山山谷露营地',lng:119.883,lat:30.598,spot_type:'农家乐营地',province:'浙江省',city:'德清县',verify_score:4.9,verify_count:41,locked:true,address:'德清县莫***',phone:'',price_range:'',facilities:[],detail:'',contact_locked:true},
+  {id:8,name:'厦门环岛路海岸营地',lng:118.0894,lat:24.4798,spot_type:'房车营地',province:'福建省',city:'思明区',verify_score:4.3,verify_count:12,locked:true,address:'思明区环***',phone:'',price_range:'',facilities:[],detail:'',contact_locked:true},
+  {id:9,name:'青岛崂山滨海营地',lng:120.3826,lat:36.0671,spot_type:'房车营地',province:'山东省',city:'崂山区',verify_score:4.6,verify_count:19,locked:true,address:'崂山区沙***',phone:'',price_range:'',facilities:[],detail:'',contact_locked:true},
+  {id:10,name:'呼伦贝尔草原营地',lng:119.7657,lat:49.2116,spot_type:'野外驻车点',province:'内蒙古自治区',city:'海拉尔区',verify_score:4.8,verify_count:37,locked:true,address:'海拉尔区***',phone:'',price_range:'',facilities:[],detail:'',contact_locked:true},
+  {id:11,name:'西安秦岭太平峪营',lng:108.9398,lat:34.3416,spot_type:'野外驻车点',province:'陕西省',city:'长安区',verify_score:4.1,verify_count:8,locked:true,address:'长安区太***',phone:'',price_range:'',facilities:[],detail:'',contact_locked:true},
+  {id:12,name:'敦煌鸣沙山营地',lng:94.6618,lat:40.1421,spot_type:'房车营地',province:'甘肃省',city:'敦煌市',verify_score:4.7,verify_count:28,locked:true,address:'敦煌市鸣***',phone:'',price_range:'',facilities:[],detail:'',contact_locked:true},
+  {id:13,name:'青海湖二郎剑营',lng:100.15,lat:36.9,spot_type:'野外驻车点',province:'青海省',city:'共和县',verify_score:4.5,verify_count:23,locked:true,address:'共和县青***',phone:'',price_range:'',facilities:[],detail:'',contact_locked:true},
+  {id:14,name:'成都青城山营地',lng:104.0665,lat:30.5728,spot_type:'房车营地',province:'四川省',city:'都江堰市',verify_score:4.4,verify_count:17,locked:true,address:'都江堰市***',phone:'',price_range:'',facilities:[],detail:'',contact_locked:true},
+  {id:15,name:'大理洱海生态廊道营',lng:100.2676,lat:25.6065,spot_type:'房车营地',province:'云南省',city:'大理市',verify_score:4.9,verify_count:45,locked:true,address:'大理市才***',phone:'',price_range:'',facilities:[],detail:'',contact_locked:true},
+  {id:16,name:'三亚亚龙湾滨海营',lng:109.5082,lat:18.2478,spot_type:'房车营地',province:'海南省',city:'吉阳区',verify_score:4.8,verify_count:39,locked:true,address:'吉阳区亚***',phone:'',price_range:'',facilities:[],detail:'',contact_locked:true},
+  {id:17,name:'桂林阳朔遇龙河营',lng:110.4966,lat:24.7785,spot_type:'农家乐营地',province:'广西壮族自治区',city:'阳朔县',verify_score:4.6,verify_count:22,locked:true,address:'阳朔县白***',phone:'',price_range:'',facilities:[],detail:'',contact_locked:true},
+  {id:18,name:'拉萨河畔房车营地',lng:91.1409,lat:29.6456,spot_type:'房车营地',province:'西藏自治区',city:'城关区',verify_score:4.7,verify_count:14,locked:true,address:'城关区仙***',phone:'',price_range:'',facilities:[],detail:'',contact_locked:true},
+  {id:19,name:'喀纳斯湖畔营地',lng:87.02,lat:48.7,spot_type:'野外驻车点',province:'新疆维吾尔自治区',city:'布尔津县',verify_score:4.9,verify_count:31,locked:true,address:'布尔津县***',phone:'',price_range:'',facilities:[],detail:'',contact_locked:true},
+  {id:20,name:'苏州太湖西山营地',lng:120.43,lat:31.12,spot_type:'房车营地',province:'江苏省',city:'吴中区',verify_score:4.5,verify_count:20,locked:true,address:'吴中区金***',phone:'',price_range:'',facilities:[],detail:'',contact_locked:true},
+];
+
+/* ---------------- 工具 ---------------- */
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function toast(msg, type = '') {
+  const el = $('#toast');
+  el.textContent = msg;
+  el.className = 'toast show ' + type;
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.className = 'toast ' + type, 2800);
+}
+
+async function api(path, opts = {}) {
+  const headers = Object.assign({'Content-Type': 'application/json'}, opts.headers || {});
+  if (TOKEN) headers['Authorization'] = 'Bearer ' + TOKEN;
+  const res = await fetch(API + path, Object.assign({}, opts, {headers}));
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || ('请求失败 ' + res.status));
+  return data;
+}
+
+function starsHtml(n, size = 13) {
+  let h = '';
+  for (let i = 1; i <= 5; i++) {
+    h += `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor" class="${i <= Math.round(n) ? 'star-full' : 'star-empty'}"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>`;
+  }
+  return `<span class="stars">${h}</span>`;
+}
+
+function pinSvg(color) {
+  return `<div class="pin"><svg viewBox="0 0 30 38"><path d="M15 0C6.7 0 0 6.7 0 15c0 10.5 15 23 15 23s15-12.5 15-23C30 6.7 23.3 0 15 0z" fill="${color}" stroke="#fff" stroke-width="1.8"/><circle cx="15" cy="14.5" r="5.2" fill="#fff"/></svg></div>`;
+}
+
+/* ---------------- 地图初始化 ---------------- */
+const map = L.map('map', {zoomControl:false, attributionControl:true, minZoom:3, maxZoom:18})
+             .setView([34.5, 108.9], 5);
+
+/* ---- 底图源：只有 OpenFreeMap ----
+   为什么只剩这一个：
+     - OSM 官方瓦片：政策明确不鼓励收费服务使用，且"可能无通知封禁、无付费档"
+     - Esri 卫星：免费条款要求产品"不产生收入"，会员制站点不满足
+     - OpenTopoMap：镜像条款限定非商业用途
+     - Cyclosm / 高德：前者无 SLA；后者属国内源需额外的 GCJ-02 纠偏与授权，此处不必要
+   OpenFreeMap 是 OSM 派生数据，但公开实例**不限量、无需 Key、明确允许商用**
+   （样式 MIT，数据 ODbL），由 MapLibre 渲染，缩放不糊、单块约 20KB。
+
+   coord 字段决定"底图认哪套坐标"，继而决定标记点用哪套值渲染：
+     - wgs84：GPS 原始坐标，无需纠偏（当前全部源都是它）
+     - gcj02：国内地图（高德/腾讯）—— 需火星偏移；代码仍在，加源即可用
+
+   ⚠️ 上线前必读 README「底图合规」：面向中国大陆用户提供服务，需使用有
+   审图号的合规底图（天地图 / 高德 / 腾讯 / 百度）。见本文件末尾
+   COMPLIANT_CN_BASEMAP 注释块，放开注释并按说明填 Key 即可整体替换。 */
+const TILE_PROVIDERS = [
+  { id:'ofm',    name:'标准地图', kind:'vector', coord:'wgs84', maxZoom:19,
+    origin:'https://tiles.openfreemap.org', path:'/styles/liberty', proxy:'/ofm',
+    attr:'© OpenFreeMap · © OpenMapTiles · 数据 © OpenStreetMap contributors' },
+  { id:'ofm_p',  name:'淡色地图', kind:'vector', coord:'wgs84', maxZoom:19,
+    origin:'https://tiles.openfreemap.org', path:'/styles/positron', proxy:'/ofm',
+    attr:'© OpenFreeMap · © OpenMapTiles · 数据 © OpenStreetMap contributors' },
+];
+
+/* 救急栅格底图：不出现在切换器里，只在 MapLibre 的 CDN 整体挂掉、地图会变
+   白板时自动顶上。正常情况下永远不会用到。想彻底去掉整张依赖，把这里清空
+   并把 applyProvider 里的降级分支删掉即可。 */
+const EMERGENCY_RASTER = {
+  id:'_emergency', name:'OSM 救急栅格', kind:'raster', coord:'wgs84', maxZoom:19,
+  origin:'https://tile.openstreetmap.org', path:'/{z}/{x}/{y}.png', proxy:'/osm',
+  attr:'© OpenStreetMap contributors（救急底图，矢量瓦片不可用）',
+};
+
+let curProvider = TILE_PROVIDERS[0];
+let tileLayer = null;    // 栅格底图
+let vecLayer = null;     // 矢量底图（MapLibre 实例挂进 Leaflet）
+/* 默认就走自建代理，和后端 config.TILE_PROXY 的默认值保持一致。
+   这样首屏渲染不会先直连一次源站（那会产生一次白嫖式的外部请求），
+   boot() 拿到 /api/meta 后再按实际配置校正。 */
+let TILE_PROXY = '/tiles';
+
+/* 开发模式下由 /api/meta 下发的演示密钥（seed.py 随机生成，写进 data/dev_keys.json）。
+   仓库是公开的，所以这里绝不能写死——生产环境后端不返回该字段，变量保持为空，
+   登录框也就不会出现"演示密钥"提示。 */
+let DEMO_USER_KEY = '';
+
+/* 样式版本号。加在样式 URL 后面，用来**绕过浏览器缓存**。
+   曾经踩过的坑：代理层修了一个"样式里写成相对路径导致矢量瓦片全部加载失败"
+   的问题，服务端已经修好，但用户浏览器里缓存着旧样式（max-age 一小时），
+   刷新也还是坏的。改这个值就能让所有人立刻拿到新样式。 */
+const STYLE_VER = '20261008b';
+
+/** 拼底图地址。默认走自建代理 /tiles/{up}/...（后端带磁盘缓存 + 防盗链），
+ *  浏览器不再直连任何第三方源站；把后端 TILE_PROXY 置空才退回直连。 */
+function sourceUrl(p) {
+  const base = (TILE_PROXY && p.proxy) ? (TILE_PROXY + p.proxy) : (p.origin || '');
+  return base + p.path + (p.kind === 'vector' ? ('?v=' + STYLE_VER) : '');
+}
+
+function clearBaseLayer() {
+  if (tileLayer) { map.removeLayer(tileLayer); tileLayer = null; }
+  if (vecLayer)  { map.removeLayer(vecLayer);  vecLayer  = null; }
+  if (map.attributionControl && map.attributionControl.clearAllAttributions)
+    map.attributionControl.clearAllAttributions();
+}
+
+function applyProvider(p, silent) {
+  // 矢量底图依赖 MapLibre；CDN 全挂时用救急栅格顶上，不能让地图变白板
+  if (p.kind === 'vector' && !(window.maplibregl && L.maplibreGL)) {
+    if (!silent) toast('矢量组件未加载，已临时改用救急栅格底图', 'err');
+    p = EMERGENCY_RASTER;
+  }
+  curProvider = p;
+  clearBaseLayer();
+
+  if (p.kind === 'vector') {
+    vecLayer = L.maplibreGL({style: sourceUrl(p), pane: 'tilePane'}).addTo(map);
+  } else {
+    tileLayer = L.tileLayer(sourceUrl(p), {
+      subdomains: p.subdomains || 'abc',
+      maxZoom: p.maxZoom,
+    }).addTo(map);
+  }
+  map.attributionControl.addAttribution(p.attr);
+
+  // 切到国内源时给一个明确提醒，避免误以为数据错位
+  if (!silent) {
+    toast('底图已切换：' + p.name + '（' + p.coord.toUpperCase() + '）'
+          + (p.devOnly ? ' · 商用前需替换' : ''), 'ok');
+  }
+  renderProviderBtns();
+  loadSpots(true);
+}
+
+function renderProviderBtns() {
+  const box = $('#tileSwitch');
+  if (!box) return;
+  box.innerHTML = TILE_PROVIDERS.map(p =>
+    `<button class="tp-btn ${p.id === curProvider.id ? 'on' : ''}${p.devOnly ? ' dev' : ''}" onclick="applyProvider(TILE_PROVIDERS.find(x=>x.id==='${p.id}'))">${p.name}${p.devOnly ? ' ⚠' : ''}</button>`
+  ).join('');
+}
+
+applyProvider(TILE_PROVIDERS[0]);
+
+/** 标记点渲染用哪套坐标：底图是 WGS-84 就用 WGS-84，是 GCJ-02 就用 GCJ-02 */
+function coordIsWgs84() { return curProvider.coord === 'wgs84'; }
+
+/** 取某条营地在当前底图坐标系下的 [lat, lng]。
+    后端会直接给 lng_wgs84；内置演示数据只存了 GCJ-02，这里就地反算。 */
+function spotLatLng(s) {
+  if (!coordIsWgs84()) return [s.lat, s.lng];
+  if (s.lng_wgs84 != null && s.lat_wgs84 != null) return [s.lat_wgs84, s.lng_wgs84];
+  const w = gcj02ToWgs84(s.lng, s.lat);
+  return [w[1], w[0]];
+}
+
+/** 把地图上的点（当前底图坐标系）转成要上报的坐标 + 坐标系标识 */
+function toSubmitCoord(lng, lat) {
+  return coordIsWgs84()
+    ? { lng, lat, coordinate: 'wgs84' }
+    : { lng, lat, coordinate: 'gcj02' };
+}
+
+const cluster = L.markerClusterGroup({
+  maxClusterRadius: 46, showCoverageOnHover: false, spiderfyOnMaxZoom: true,
+  iconCreateFunction: c => L.divIcon({html: `<div class="cluster-ico">${c.getChildCount()}</div>`, className: '', iconSize: [38,38]})
+});
+map.addLayer(cluster);
+
+/* ---------------- 数据加载：视口查询 ---------------- */
+let loadTimer = null;
+async function loadSpots(force = false) {
+  const b = map.getBounds();
+  const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].map(v => v.toFixed(5)).join(',');
+  const zoom = map.getZoom();
+
+  if (!API_OK) { render(DEMO_SPOTS); return; }
+
+  try {
+    const q = new URLSearchParams({bbox, zoom, limit: 1500});
+    if (state.kw) q.set('keyword', state.kw);
+    const d = await api('/api/spots?' + q);
+    render(d.items);
+    if (d.hidden_by_sample) $('#tip').innerHTML = `低缩放级别下已聚合显示，放大可查看全部 ${d.total + d.hidden_by_sample} 个营地`;
+  } catch (e) {
+    if (force) toast(e.message, 'err');
+  }
+}
+
+function scheduleLoad() {
+  clearTimeout(loadTimer);
+  loadTimer = setTimeout(loadSpots, 260);
+}
+
+map.on('moveend', scheduleLoad);
+map.on('zoomend', () => { $('#stZoom').textContent = map.getZoom(); scheduleLoad(); });
+
+/* ---------------- 渲染 ---------------- */
+function filtered(list) {
+  return list.filter(s => {
+    if (!state.typeOn.has(s.spot_type)) return false;
+    if (state.kw) {
+      const k = state.kw.toLowerCase();
+      const hit = (s.name + s.province + s.city + (s.address || '')).toLowerCase().includes(k);
+      if (!hit) return false;
+    }
+    if (state.facOn.size) {
+      const fs = s.facilities || [];
+      for (const f of state.facOn) if (!fs.includes(f)) return false;
+    }
+    return true;
+  });
+}
+
+function render(list) {
+  state.spots = list;
+  const items = filtered(list);
+  cluster.clearLayers();
+  const markers = items.map(s => {
+    const color = TYPE_COLOR[s.spot_type] || '#2E6B4F';
+    const m = L.marker(spotLatLng(s), {icon: L.divIcon({html: pinSvg(color), className: '', iconSize: [30,38], iconAnchor: [15,38], popupAnchor: [0,-36]})});
+    m.on('click', () => openSpot(s.id));
+    return m;
+  });
+  cluster.addLayers(markers);
+  $('#stTotal').textContent = items.length;
+  buildFilters();
+}
+
+/* ---------------- 侧栏筛选 ---------------- */
+function buildFilters() {
+  if (!$('#typeFilters').dataset.built) {
+    $('#typeFilters').innerHTML = TYPES.map(t => `
+      <label class="filter-row">
+        <input type="checkbox" checked data-type="${esc(t.name)}">
+        <span class="dot" style="background:${t.color}"></span>
+        <span>${esc(t.name)}</span>
+      </label>`).join('');
+    $('#typeFilters').addEventListener('change', e => {
+      const t = e.target.dataset.type;
+      if (!t) return;
+      e.target.checked ? state.typeOn.add(t) : state.typeOn.delete(t);
+      render(state.spots);
+    });
+    $('#typeFilters').dataset.built = '1';
+  }
+  $('#facFilters').innerHTML = FACILITIES.map(f =>
+    `<span class="fac ${state.facOn.has(f) ? 'on' : ''}" data-fac="${esc(f)}">${esc(f)}</span>`).join('');
+  $('#legend').innerHTML = TYPES.map(t =>
+    `<div class="legend-row"><span class="dot" style="background:${t.color}"></span>${esc(t.name)}</div>`).join('');
+}
+
+$('#facFilters').addEventListener('click', e => {
+  const el = e.target.closest('.fac');
+  if (!el) return;
+  const f = el.dataset.fac;
+  state.facOn.has(f) ? state.facOn.delete(f) : state.facOn.add(f);
+  render(state.spots);
+});
+
+/* ---------------- 详情抽屉 ---------------- */
+async function openSpot(id) {
+  state.currentId = id;
+  let s;
+  try {
+    s = API_OK ? await api('/api/spots/' + id) : DEMO_SPOTS.find(x => x.id === id);
+  } catch (e) {
+    // 402 = 今日免费额度用完，这是转化窗口，要给出明确的引导而不是一句报错
+    if (/额度/.test(e.message)) return openQuotaWall(e.message);
+    return toast(e.message, 'err');
+  }
+  if (!s) return;
+
+  const color = TYPE_COLOR[s.spot_type] || '#2E6B4F';
+  $('#drawerHead').innerHTML = `
+    <div class="tag">${esc(s.spot_type)}</div>
+    <div class="h2">${esc(s.name)}</div>
+    <div class="score">
+      ${starsHtml(s.verify_score)}
+      <b>${(s.verify_score || 0).toFixed(1)}</b>
+      <span>· ${s.verify_count || 0} 人核实</span>
+    </div>`;
+
+  const locked = s.contact_locked;
+  // 主坐标跟随当前底图坐标系显示，另两行始终给出完整换算结果
+  const _ll = spotLatLng(s);
+  const coords = `${_ll[1].toFixed(5)}, ${_ll[0].toFixed(5)}`;
+
+  let contactHtml = `
+    <div class="kv"><div class="kv-k">地址</div><div class="kv-v">${esc(s.address || '—')}</div></div>
+    <div class="kv"><div class="kv-k">电话</div><div class="kv-v mono">${esc(s.phone || '—')}</div></div>
+    <div class="kv"><div class="kv-k">参考价</div><div class="kv-v">${esc(s.price_range || '—')}</div></div>`;
+
+  if (locked && API_OK) {
+    contactHtml = `<div class="locked">
+      <div class="locked-inner">${contactHtml}</div>
+      <div class="locked-mask">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 018 0v3"/></svg>
+        <b>联系方式需会员权限</b>
+        <small>开通会员后可查看完整地址、电话、参考价格与设施清单</small>
+        <button class="btn btn-primary btn-sm" onclick="openMember()">了解会员</button>
+      </div>
+    </div>`;
+  }
+
+  const facHtml = (s.facilities && s.facilities.length)
+    ? `<div class="sec-t">营地设施</div><div class="fac-tags">${s.facilities.map(f => `<span class="fac-tag">${esc(f)}</span>`).join('')}</div>`
+    : (locked ? `<div class="sec-t">营地设施</div><div class="locked" style="min-height:70px"><div class="locked-inner"><div class="fac-tags">${FACILITIES.slice(0,6).map(f=>`<span class="fac-tag">${esc(f)}</span>`).join('')}</div></div><div class="locked-mask"><small>会员可见</small></div></div>` : '');
+
+  const detailHtml = s.detail
+    ? `<div class="sec-t">营地详情</div><div class="detail-txt">${esc(s.detail)}</div>` : '';
+
+  // 列表用缩略图（480px），点开才是原图——原图动辄 3~5MB，直接铺会拖垮页面
+  const imgs = (s.images || []).map(u => typeof u === 'string' ? {url: u, thumb: u} : u);
+  const imgHtml = imgs.length
+    ? `<div class="sec-t">营地照片（${imgs.length}）</div>
+       <div class="gallery">${imgs.map(u => `<img src="${esc(u.thumb || u.url)}" alt="营地照片" loading="lazy" onclick="openLightbox('${esc(u.url)}')">`).join('')}</div>`
+    : (locked && API_OK
+        ? `<div class="sec-t">营地照片</div>
+           <div class="locked" style="min-height:90px">
+             <div class="locked-inner"><div class="gallery">${[1,2,3].map(()=>`<div style="width:100%;aspect-ratio:1;background:var(--line);border-radius:9px"></div>`).join('')}</div></div>
+             <div class="locked-mask"><small>会员可见</small></div>
+           </div>`
+        : '');
+
+  $('#drawerBody').innerHTML = `
+    ${imgHtml}
+    ${contactHtml}
+    ${facHtml}
+    ${detailHtml}
+    <div class="sec-t">坐标（${coordIsWgs84() ? 'WGS-84 · 原始 GPS' : 'GCJ-02 · 火星坐标'}）</div>
+    <div class="kv"><div class="kv-k">经纬度</div><div class="kv-v mono">${coords}</div></div>
+    ${s.lng_wgs84 ? `<div class="kv"><div class="kv-k">WGS-84</div><div class="kv-v mono">${s.lng_wgs84.toFixed(6)}, ${s.lat_wgs84.toFixed(6)}</div></div>` : ''}
+    ${s.lng_bd09 ? `<div class="kv"><div class="kv-k">BD-09</div><div class="kv-v mono">${s.lng_bd09.toFixed(6)}, ${s.lat_bd09.toFixed(6)}</div></div>` : ''}
+    <div class="sec-t">核实与评价</div>
+    <div id="rateArea">${rateAreaHtml(!!locked && API_OK)}</div>
+    <div id="reviews">${(s.ratings || []).map(r => `
+      <div class="review">
+        <div class="review-h"><b>${esc(r.nickname)}</b><span>${esc((r.created_at||'').slice(0,10))}</span></div>
+        ${starsHtml(r.stars, 11)}
+        ${r.comment ? `<div style="margin-top:5px;color:var(--ink-2);line-height:1.6">${esc(r.comment)}</div>` : ''}
+      </div>`).join('') || '<div style="font-size:13px;color:var(--ink-3);padding:10px 0">还没有人核实过这个营地</div>'}
+    </div>`;
+
+  $('#drawer').classList.add('open');
+  if (API_OK && !locked) map.panTo(spotLatLng(s), {animate: true});
+}
+
+/* 免费额度用完时的转化页。以前这个额度只是接口返回里的一个数字，
+   从来没有真正拦过任何人——会员卖点等于被自己架空了。 */
+function openQuotaWall(msg) {
+  openModal(`
+    <div class="modal-head">
+      <h2>今日免费查看次数已用完</h2>
+      <p>${esc(msg)}</p>
+    </div>
+    <div class="modal-body">
+      <div style="padding:14px;background:var(--bg);border-radius:var(--r);font-size:13px;line-height:1.85;margin-bottom:14px">
+        <b>免费用户</b>每天可查看 ${QUOTA_LIMIT} 个营地的完整信息（地址、电话、价格、设施、照片）。<br>
+        <b>赞助会员</b>不限次数，还能看到全部营地的联系方式与实拍照片。
+      </div>
+      <div style="display:flex;gap:9px">
+        <button class="btn btn-ghost" style="flex:1" onclick="closeModal()">明天再看</button>
+        <button class="btn btn-primary" style="flex:1" onclick="closeModal();openMember()">了解会员</button>
+      </div>
+      <div style="margin-top:10px;text-align:center">
+        <a href="javascript:;" style="font-size:12.5px;color:var(--ink-3)" onclick="closeModal();openLogin()">已有会员？登录</a>
+      </div>
+    </div>`);
+}
+
+function rateAreaHtml(locked) {
+  if (locked) return `<div class="rate-box" style="text-align:center;color:var(--ink-3);font-size:13px">开通会员后可参与核实评价</div>`;
+  if (!ME) return `<div class="rate-box" style="text-align:center"><div style="font-size:13px;color:var(--ink-2);margin-bottom:9px">登录后可为这个营地打分、核实信息是否仍然有效</div><div style="display:flex;gap:8px;justify-content:center"><button class="btn btn-primary btn-sm" onclick="openLogin()">登录</button><button class="btn btn-ghost btn-sm" onclick="issueKey()">免费领密钥</button></div></div>`;
+  return `<div class="rate-box">
+    <div style="font-size:13px;font-weight:500">去过的营地，打个分</div>
+    <div class="rate-stars" id="rateStars">${[1,2,3,4,5].map(i=>`<button data-v="${i}">★</button>`).join('')}</div>
+    <textarea id="rateText" placeholder="补充你的实地体验，比如水电是否可用、卫生间条件、夜间是否安静…"></textarea>
+    <div class="rate-actions">
+      <button class="btn btn-primary btn-sm" onclick="submitRate('ok')">信息准确</button>
+      <button class="btn btn-ghost btn-sm" onclick="submitRate('stale')">已失效</button>
+    </div>
+  </div>`;
+}
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('#rateStars button');
+  if (!b) return;
+  const v = +b.dataset.v;
+  document.querySelectorAll('#rateStars button').forEach(x => x.classList.toggle('on', +x.dataset.v <= v));
+  $('#rateStars').dataset.pick = v;
+});
+
+async function submitRate(verdict) {
+  if (!API_OK) return toast('演示模式无法提交，请启动后端服务', 'err');
+  const stars = +($('#rateStars').dataset.pick || 0);
+  if (!stars) return toast('请先选择星级');
+  try {
+    const r = await api(`/api/spots/${state.currentId}/rate`, {
+      method: 'POST',
+      body: JSON.stringify({stars, comment: $('#rateText').value.trim(), verdict})
+    });
+    toast(verdict === 'stale' ? '已反馈失效，感谢核实' : '评价已提交，+3 积分', 'ok');
+    openSpot(state.currentId);
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+function closeDrawer() { $('#drawer').classList.remove('open'); state.currentId = null; }
+
+/* ---------------- 图片灯箱 ---------------- */
+function openLightbox(url) {
+  $('#lightboxImg').src = url;
+  $('#lightbox').classList.add('open');
+}
+function closeLightbox() { $('#lightbox').classList.remove('open'); }
+
+/* ---------------- 选点新增 ---------------- */
+let pickMarker = null;
+function startPick() {
+  if (!ME) { openLogin(); return; }
+  state.picking = true;
+  $('#pickHint').classList.add('show');
+  $('#crosshair').classList.add('show');
+  $('#tip').style.display = 'none';
+  map.getContainer().style.cursor = 'crosshair';
+}
+function cancelPick() {
+  state.picking = false;
+  $('#pickHint').classList.remove('show');
+  $('#crosshair').classList.remove('show');
+  $('#tip').style.display = '';
+  map.getContainer().style.cursor = '';
+}
+
+map.on('click', e => {
+  if (!state.picking) return;
+  const {lat, lng} = e.latlng;
+  cancelPick();
+  if (pickMarker) map.removeLayer(pickMarker);
+  pickMarker = L.marker([lat, lng], {icon: L.divIcon({html: pinSvg('#D97A3D'), className:'', iconSize:[30,38], iconAnchor:[15,38]})}).addTo(map);
+  openNewSpotForm(lng, lat);
+});
+
+/* ---------------- 模态：登录 ---------------- */
+function openModal(html) { $('#modalCard').innerHTML = html; $('#modal').classList.add('open'); }
+function closeModal() { 
+  $('#modal').classList.remove('open');
+  if (pickMarker) { map.removeLayer(pickMarker); pickMarker = null; }
+}
+$('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
+
+function openLogin() {
+  openModal(`
+    <div class="modal-head">
+      <h2>用户登录</h2>
+      <p>输入 32 位密钥即可登录，无需账号密码</p>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label>用户密钥</label>
+        <input id="sk" placeholder="请输入由字母、数字组成的 32 位密钥" autocomplete="off" spellcheck="false"
+               style="font-family:ui-monospace,Menlo,monospace;letter-spacing:.5px;font-size:13px">
+      </div>
+      <div style="font-size:12px;color:var(--ink-3);line-height:1.6;margin-bottom:14px">
+        密钥只显示一次，<b>丢失后无法找回</b>，请妥善保存。没有密钥？点击下方按钮免费「领取密钥」。
+      </div>
+      <div id="keyErr" style="display:none;color:var(--red);font-size:12.5px;margin-bottom:10px"></div>
+      <div style="display:flex;gap:9px">
+        <button class="btn btn-primary" style="flex:1" onclick="keyLogin()">登录</button>
+        <button class="btn btn-ghost" style="flex:1" onclick="issueKey()">领取密钥</button>
+      </div>
+      ${DEMO_USER_KEY ? `<div style="margin-top:18px;padding:12px;background:var(--bg);border-radius:9px;font-size:12px;color:var(--ink-2);line-height:1.8">
+        <b style="color:var(--ink)">演示密钥</b>（点一下填入）<br>
+        <code id="demoKeyHint" onclick="(()=>{const i=$('#sk'); if(i){i.value='${DEMO_USER_KEY}'; i.focus();}})()"
+              style="cursor:pointer;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;background:#fff;padding:2px 5px;border-radius:4px;border:1px solid var(--line);word-break:break-all">${DEMO_USER_KEY}</code>
+      </div>` : ''}
+    </div>`);
+  setTimeout(() => { const el = $('#sk'); if (el) el.focus(); }, 60);
+}
+
+/* ---- 密钥登录 ---- */
+async function keyLogin() {
+  const key = $('#sk').value.trim();
+  const err = $('#keyErr');
+  if (!key) { err.textContent = '请输入密钥'; err.style.display = 'block'; return; }
+  if (!API_OK) { err.textContent = '演示模式无法登录，请先启动后端服务'; err.style.display = 'block'; return; }
+  try {
+    const d = await api('/api/auth/key/login', {method:'POST', body: JSON.stringify({secret_key: key})});
+    TOKEN = d.token; localStorage.setItem('rv_token', TOKEN);
+    ME = d.user;
+    closeModal(); renderAcct(); loadSpots(true); refreshBell();
+    toast('欢迎回来，' + ME.nickname, 'ok');
+  } catch (e) { err.textContent = e.message; err.style.display = 'block'; }
+}
+
+/* ---- 免费领取密钥（先过图形验证码） ----
+   这是全站唯一"什么都不提供就能拿走东西"的入口，不加验证码的话，
+   一个脚本循环就能刷出几万个账号：积分、审核队列、数据库全被冲垮。 */
+let captchaId = '';
+
+async function refreshCaptcha() {
+  const img = $('#capImg'), inp = $('#capInput'), tip = $('#capTip');
+  if (!img) return;
+  try {
+    const d = await api('/api/captcha');
+    captchaId = d.id;
+    img.src = d.image;
+    inp.value = '';
+    if (tip) { tip.textContent = ''; tip.style.display = 'none'; }
+    inp.focus();
+  } catch (e) {
+    if (tip) { tip.textContent = e.message; tip.style.display = 'block'; }
+  }
+}
+
+async function issueKey() {
+  // 登录弹窗里也有这个按钮，那时没有 keyErr；统一提示到 toast
+  if (!API_OK) { toast('演示模式无法领取，请先启动后端服务', 'err'); return; }
+  captchaId = '';
+  openModal(`
+    <div class="modal-head">
+      <h2>领取密钥</h2>
+      <p>先完成验证，避免机器批量领取</p>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label>图形验证码</label>
+        <div style="display:flex;align-items:center;gap:9px">
+          <img id="capImg" alt="验证码"
+               style="height:46px;border:1px solid var(--line);border-radius:8px;background:var(--bg);cursor:pointer"
+               onclick="refreshCaptcha()" title="点击换一张">
+          <input id="capInput" placeholder="请输入图中字符" maxlength="6"
+                 autocomplete="off" spellcheck="false" style="flex:1;letter-spacing:2px">
+        </div>
+      </div>
+      <div style="font-size:12px;color:var(--ink-3);margin-bottom:12px">
+        看不清？点图片换一张。验证码 5 分钟内有效。
+      </div>
+      <div id="capTip" style="display:none;color:var(--red);font-size:12.5px;margin-bottom:10px"></div>
+      <div style="display:flex;gap:9px">
+        <button class="btn btn-primary" style="flex:1" onclick="submitIssueKey()">确认领取</button>
+        <button class="btn btn-ghost" style="flex:1" onclick="openLogin()">我已有密钥</button>
+      </div>
+    </div>`);
+  await refreshCaptcha();
+}
+
+async function submitIssueKey() {
+  const err = $('#capTip');
+  const code = ($('#capInput').value || '').trim();
+  if (!captchaId) { err.textContent = '验证码未加载，请点击图片换一张'; err.style.display = 'block'; return; }
+  if (!code) { err.textContent = '请输入验证码'; err.style.display = 'block'; return; }
+  try {
+    const q = '?captcha_id=' + encodeURIComponent(captchaId)
+            + '&captcha_code=' + encodeURIComponent(code);
+    const d = await api('/api/auth/key/issue' + q, {method: 'POST'});
+    TOKEN = d.token; localStorage.setItem('rv_token', TOKEN);
+    ME = d.user;
+    renderAcct();
+    showKeyCard(d.secret_key, d.user.user_no, true);
+  } catch (e) {
+    err.textContent = e.message; err.style.display = 'block';
+    // 不管对错都换一张：错了是防试错，对了这张也已经用掉
+    await refreshCaptcha();
+  }
+}
+
+/* ---- 密钥卡片：明文只出现这一次 ---- */
+function showKeyCard(key, userNo, isNew) {
+  const groups = key.split('-');
+  openModal(`
+    <div class="modal-head">
+      <h2>${isNew ? '你的专属密钥已生成' : '你的密钥'}</h2>
+      <p style="color:var(--orange)">请立即保存。密钥只显示这一次，我们不会保留明文，丢失后无法找回。</p>
+    </div>
+    <div class="modal-body">
+      <div style="padding:16px;background:var(--bg);border-radius:var(--r);border:1px dashed var(--line-2);margin-bottom:14px">
+        <div style="font-size:11.5px;color:var(--ink-3);margin-bottom:8px">用户编号 ${esc(userNo)}</div>
+        <div style="font-family:ui-monospace,Menlo,monospace;font-size:${groups.length>4?'14px':'17px'};font-weight:600;letter-spacing:1.2px;word-break:break-all;line-height:1.9;color:var(--green-d)">${esc(key)}</div>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <button class="btn btn-ghost btn-sm" style="flex:1" onclick="copyKey('${esc(key)}')">复制密钥</button>
+        <button class="btn btn-ghost btn-sm" style="flex:1" onclick="downloadKey('${esc(key)}','${esc(userNo)}')">下载保存</button>
+      </div>
+      <div style="padding:12px;background:var(--orange-l);border-radius:9px;font-size:12.5px;color:#8A4A14;line-height:1.7">
+        <b>为什么要自己保存？</b><br>
+        服务端只存储密钥的哈希值，无法还原成明文。这保证了即使数据库泄露，你的账号也不会被盗——
+        但代价是丢了就找不回来。建议存到密码管理器，或截图保存到私密相册。
+      </div>
+      <button class="btn btn-primary" style="width:100%;margin-top:14px" onclick="closeModal()">我已保存，开始使用</button>
+    </div>`);
+}
+
+function copyKey(key) {
+  navigator.clipboard.writeText(key).then(
+    () => toast('密钥已复制到剪贴板', 'ok'),
+    () => toast('复制失败，请手动选中复制', 'err')
+  );
+}
+
+function downloadKey(key, userNo) {
+  const content = [
+    '房车营地地图 · 用户密钥',
+    '========================',
+    '用户编号：' + userNo,
+    '用户密钥：' + key,
+    '生成时间：' + new Date().toLocaleString('zh-CN'),
+    '',
+    '请妥善保管本文件。密钥是登录的唯一凭证，丢失后无法找回。',
+  ].join('\n');
+  const blob = new Blob([content], {type: 'text/plain;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `营地地图-密钥-${userNo}.txt`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+/* 注：用户端只保留密钥登录。账号密码接口仍在后端保留（供应急管理员使用），
+   但前端不再提供入口——两套登录混在一个界面上只会让用户困惑。 */
+
+/* ---------------- 模态：新营地 ---------------- */
+function openNewSpotForm(lng, lat) {
+  window._uploads = [];   // 本次提交已上传的图片路径
+  openModal(`
+    <div class="modal-head">
+      <h2>添加营地</h2>
+      <p>提交后进入审核队列，审核通过你将获得 <b>50 积分</b>（500 积分可兑 30 天会员）</p>
+    </div>
+    <div class="modal-body">
+      <div class="coord-hint">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 1118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+        已定位：${lng.toFixed(5)}, ${lat.toFixed(5)}（${coordIsWgs84() ? 'WGS-84' : 'GCJ-02'}）
+      </div>
+      <div class="field"><label>营地名称 *</label><input id="fn" placeholder="例如：太湖湾房车营地" maxlength="60"></div>
+      <div class="field-2">
+        <div class="field"><label>营地类型</label><select id="ft">${TYPES.map(t=>`<option>${esc(t.name)}</option>`).join('')}</select></div>
+        <div class="field"><label>参考价格</label><input id="fp" placeholder="如 180-300元/晚"></div>
+      </div>
+      <div class="field-2">
+        <div class="field"><label>省 / 直辖市</label><input id="fprov" placeholder="江苏省"></div>
+        <div class="field"><label>城市 / 区县</label><input id="fcity" placeholder="无锡市"></div>
+      </div>
+      <div class="field"><label>详细地址</label><input id="faddr" placeholder="滨湖区太湖湾环湖路 88 号"></div>
+      <div class="field"><label>联系电话</label><input id="fphone" placeholder="0510-88888888"></div>
+
+      <div class="field">
+        <label>营地照片（最多 6 张，单张不超过 5MB）</label>
+        <div id="dropZone" class="drop-zone" onclick="document.getElementById('fileInput').click()">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>
+          </svg>
+          <div style="font-size:13px;margin-top:6px">点击选择照片，或把图片拖到这里</div>
+          <div style="font-size:11.5px;color:var(--ink-3);margin-top:3px">支持 JPG / PNG / WebP / GIF</div>
+        </div>
+        <input type="file" id="fileInput" accept="image/*" multiple style="display:none" onchange="handleFiles(this.files)">
+        <div id="thumbs" class="thumbs"></div>
+        <div id="upStatus" style="font-size:12px;color:var(--ink-3);margin-top:6px;display:none"></div>
+      </div>
+
+      <div class="field"><label>营地设施（可多选）</label><div class="fac-list" id="ffac">${FACILITIES.map(f=>`<span class="fac" data-fac="${esc(f)}">${esc(f)}</span>`).join('')}</div></div>
+      <div class="field"><label>补充说明</label><textarea id="fdet" placeholder="泊位数量、营业季节、周边配套、注意事项…"></textarea></div>
+      <div id="fErr" style="display:none;color:var(--red);font-size:12.5px;margin-bottom:10px"></div>
+      <div style="display:flex;gap:9px">
+        <button class="btn btn-ghost" style="flex:1" onclick="cancelNewSpot()">取消</button>
+        <button class="btn btn-primary" style="flex:2" onclick="submitSpot(${lng},${lat})">提交审核</button>
+      </div>
+    </div>`);
+  $('#ffac').addEventListener('click', e => {
+    const el = e.target.closest('.fac');
+    if (el) el.classList.toggle('on');
+  });
+  const dz = $('#dropZone');
+  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
+  dz.addEventListener('drop', e => {
+    e.preventDefault(); dz.classList.remove('drag');
+    handleFiles(e.dataTransfer.files);
+  });
+}
+
+/* ---- 图片上传 ---- */
+const MAX_IMGS = 6;
+
+function handleFiles(fileList) {
+  const files = [...fileList].filter(f => f.type.startsWith('image/'));
+  if (!files.length) return toast('请选择图片文件', 'err');
+  const room = MAX_IMGS - window._uploads.length;
+  if (room <= 0) return toast(`最多上传 ${MAX_IMGS} 张照片`, 'err');
+  if (files.length > room) {
+    toast(`最多 ${MAX_IMGS} 张，已只取前 ${room} 张`);
+    files.length = room;
+  }
+  // 本地预览（上传成功后替换为服务器地址）
+  const box = $('#thumbs');
+  const placeholders = files.map((f, i) => {
+    const id = 'ph' + Date.now() + i;
+    const reader = new FileReader();
+    reader.onload = e => {
+      const el = document.getElementById(id);
+      if (el) el.querySelector('img').src = e.target.result;
+    };
+    reader.readAsDataURL(f);
+    const div = document.createElement('div');
+    div.className = 'thumb uploading';
+    div.id = id;
+    div.innerHTML = `<img alt=""><div class="thumb-spin"></div>`;
+    box.appendChild(div);
+    return id;
+  });
+  doUpload(files, placeholders);
+}
+
+async function doUpload(files, placeholders) {
+  const status = $('#upStatus');
+  status.style.display = 'block';
+  status.textContent = `正在上传 ${files.length} 张照片…`;
+  try {
+    const fd = new FormData();
+    files.forEach(f => fd.append('files', f));
+    const res = await fetch(API + '/api/upload/images', {
+      method: 'POST',
+      headers: TOKEN ? {'Authorization': 'Bearer ' + TOKEN} : {},
+      body: fd,   // 不设 Content-Type，让浏览器自动带 boundary
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || '上传失败');
+
+    placeholders.forEach((id, i) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (data.urls[i]) {
+        // 服务端返回的是 {url, thumb}：缩略图用于预览，提交时两个都带上
+        el.classList.remove('uploading');
+        el.dataset.path = data.urls[i].url;
+        const img = el.querySelector('img');
+        if (img && data.urls[i].thumb) img.src = data.urls[i].thumb;
+        el.insertAdjacentHTML('beforeend',
+          `<button class="thumb-del" type="button" onclick="removeThumb(this)">×</button>`);
+      } else {
+        el.classList.add('failed');
+        el.querySelector('.thumb-spin')?.remove();
+      }
+    });
+    window._uploads = window._uploads.concat(data.urls);
+    const n = window._uploads.length;
+    status.textContent = `已上传 ${n}/${MAX_IMGS} 张`
+      + (data.errors && data.errors.length ? `（${data.errors.length} 张未通过校验）` : '');
+  } catch (e) {
+    placeholders.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) { el.classList.add('failed'); el.querySelector('.thumb-spin')?.remove(); }
+    });
+    status.textContent = '';
+    toast(e.message, 'err');
+  }
+}
+
+async function removeThumb(btn) {
+  const el = btn.closest('.thumb');
+  const path = el.dataset.path;
+  if (path) {
+    window._uploads = window._uploads.filter(p => (p.url || p) !== path);
+    api('/api/upload/images?path=' + encodeURIComponent(path), {method:'DELETE'}).catch(()=>{});
+  }
+  el.remove();
+  $('#upStatus').textContent = window._uploads.length ? `已上传 ${window._uploads.length}/${MAX_IMGS} 张` : '';
+  if ($('#upStatus').textContent === '') $('#upStatus').style.display = 'none';
+}
+
+function cancelNewSpot() {
+  // 取消时把已上传的图删掉，避免堆积孤儿文件
+  (window._uploads || []).forEach(p =>
+    api('/api/upload/images?path=' + encodeURIComponent(p.url || p), {method:'DELETE'}).catch(()=>{}));
+  window._uploads = [];
+  closeModal();
+}
+
+async function submitSpot(lng, lat) {
+  const name = $('#fn').value.trim();
+  const err = $('#fErr');
+  if (name.length < 2) { err.textContent = '请填写营地名称'; err.style.display = 'block'; return; }
+  if (($('#upStatus').textContent || '').includes('正在上传')) {
+    err.textContent = '照片还在上传中，请稍候'; err.style.display = 'block'; return;
+  }
+  const facilities = [...document.querySelectorAll('#ffac .fac.on')].map(x => x.dataset.fac);
+  const c = toSubmitCoord(lng, lat);   // 坐标系跟随当前底图，避免偏移
+  const body = {
+    name, lng: c.lng, lat: c.lat, coordinate: c.coordinate,
+    spot_type: $('#ft').value,
+    province: $('#fprov').value.trim(),
+    city: $('#fcity').value.trim(),
+    address: $('#faddr').value.trim(),
+    phone: $('#fphone').value.trim(),
+    price_range: $('#fp').value.trim(),
+    facilities,
+    detail: $('#fdet').value.trim(),
+    images: window._uploads || [],
+  };
+  try {
+    const d = await api('/api/spots', {method: 'POST', body: JSON.stringify(body)});
+    window._uploads = [];   // 已随营地提交，不要再触发删除
+    closeModal();
+    toast(d.message, 'ok');
+    if ($('#tip')) $('#tip').style.display = '';
+  } catch (e) { err.textContent = e.message; err.style.display = 'block'; }
+}
+
+/* ---------------- 模态：会员中心 ---------------- */
+let PLAN_CACHE = [];
+function openMember() {
+  openModal(`
+    <div class="modal-head">
+      <h2>用户中心</h2>
+      <p>会员可查看全部营地的地址、电话、价格与设施详情</p>
+    </div>
+    <div class="modal-body">
+      <div id="meBox"></div>
+      <div id="quotaBox"></div>
+      <div id="keyBox"></div>
+      <div class="sec-t">会员体系对比</div>
+      <table class="member-table">
+        <thead><tr><th>权益</th><th>免费会员</th><th>赞助会员</th></tr></thead>
+        <tbody>
+          <tr><td>费用</td><td>0 元</td><td>99 元 / 三年</td></tr>
+          <tr><td>地图与营地点位</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+          <tr><td>营地评分与评价</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+          <tr class="hl"><td>完整地址 / 电话 / 价格</td><td class="no">✕</td><td class="yes">✓</td></tr>
+          <tr class="hl"><td>营地设施清单</td><td class="no">✕</td><td class="yes">✓</td></tr>
+          <tr><td>提交营地赚积分</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+        </tbody>
+      </table>
+      <div class="sec-t">赞助开通</div>
+      <div id="planBox"><div class="empty">加载中…</div></div>
+      <div class="sec-t">积分兑换</div>
+      <div id="exBox"></div>
+    </div>`);
+  loadMember();
+}
+
+async function loadMember() {
+  if (!API_OK) {
+    $('#meBox').innerHTML = `<div class="coord-hint">演示模式：请启动后端服务后使用完整会员功能</div>`;
+    $('#keyBox').innerHTML = '';
+    $('#planBox').innerHTML = `
+      <div class="plan"><div class="plan-l"><b>普通会员 · 三年</b><span>查看全部营地联系方式</span></div><div class="plan-r"><b>99</b><span>元 / 三年</span></div></div>
+      <div class="plan"><div class="plan-l"><b>尊贵会员 · 终身</b><span>永久权限 + 专属社群</span></div><div class="plan-r"><b>299</b><span>元 / 终身</span></div></div>`;
+    $('#exBox').innerHTML = `<div class="empty">演示模式不可兑换</div>`;
+    return;
+  }
+  if (!ME) {
+    $('#meBox').innerHTML = `
+      <div style="text-align:center;padding:20px 0 24px">
+        <div style="font-size:13.5px;color:var(--ink-2);margin-bottom:14px">登录后可查看你的密钥、积分与会员状态</div>
+        <button class="btn btn-primary" onclick="openLogin()">登录 / 领取密钥</button>
+      </div>`;
+    $('#keyBox').innerHTML = '';
+    $('#quotaBox').innerHTML = '';
+    $('#planBox').innerHTML = '<div class="empty">请先登录</div>';
+    $('#exBox').innerHTML = '<div class="empty">请先登录</div>';
+    return;
+  }
+  try {
+    const me = await api('/api/auth/me');
+    window._quota = me.quota || {};
+    // 用户信息面板（对应截图左侧那一栏）
+    $('#meBox').innerHTML = `
+      <div style="display:flex;gap:12px;align-items:center;padding:13px;background:var(--bg);border-radius:var(--r);margin-bottom:14px">
+        <div class="avatar" style="width:40px;height:40px;font-size:15px">${esc((ME.nickname||'游')[0])}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:14.5px;font-weight:600;margin-bottom:3px">${esc(ME.nickname || '未命名')} ${ME.is_member ? '<span class="badge-vip">会员</span>' : ''}</div>
+          <div style="font-size:12.5px;color:var(--ink-2)">${ME.is_anonymous ? '匿名密钥账号' : '账号密码账号'}</div>
+        </div>
+      </div>
+      <div class="key-row"><div class="key-k">用户编号</div><div class="key-v mono">${esc(ME.user_no || '—')}</div></div>
+      <div class="key-row"><div class="key-k">用户密钥</div><div class="key-v mono">${'•'.repeat(28)}${esc(ME.key_preview || '')}</div></div>
+      <div class="key-row"><div class="key-k">贡献积分</div><div class="key-v"><b style="color:var(--green-d)">${ME.points ?? 0}</b> 分</div></div>
+      <div class="key-row"><div class="key-k">会员类型</div><div class="key-v">${ME.is_member ? '赞助会员' : '免费会员'}</div></div>
+      <div class="key-row"><div class="key-k">会员到期</div><div class="key-v">${ME.expire_at ? esc(ME.expire_at.slice(0,10)) : '—'}</div></div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn btn-ghost btn-sm" style="flex:1" onclick="openMySpots()">我的提交</button>
+        <button class="btn btn-ghost btn-sm" style="flex:1" onclick="openNotifications()">消息中心</button>
+      </div>`;
+
+    // 今日额度：让免费用户清楚知道"还能看几个"，而不是撞墙才知道
+    const q = window._quota || {};
+    $('#quotaBox').innerHTML = ME.is_member ? '' : `
+      <div class="sec-t">今日查看额度</div>
+      <div style="display:flex;align-items:center;gap:10px;padding:11px 13px;background:var(--bg);border-radius:var(--r);margin-bottom:4px">
+        <div style="flex:1;font-size:13px;color:var(--ink-2)">已用 <b style="color:var(--ink)">${q.used ?? 0}</b> / ${q.limit ?? QUOTA_LIMIT} 个营地详情</div>
+        <div style="width:74px;height:6px;border-radius:4px;background:var(--line);overflow:hidden">
+          <div style="height:100%;width:${Math.min(100, ((q.used ?? 0) / (q.limit || QUOTA_LIMIT)) * 100)}%;background:var(--green)"></div>
+        </div>
+      </div>`;
+
+    $('#keyBox').innerHTML = `
+      <div class="sec-t">密钥管理</div>
+      <div style="padding:13px;background:var(--orange-l);border-radius:var(--r);font-size:12.5px;color:#8A4A14;line-height:1.75;margin-bottom:10px">
+        密钥只存哈希，<b>丢失后无法找回</b>。系统只显示末 4 位（${esc(ME.key_preview || '—')}）供你核对。
+        如果怀疑密钥泄露，可以换发新密钥——旧密钥会立即失效。
+      </div>
+      <button class="btn btn-ghost btn-sm" style="width:100%" onclick="rotateKey()">换发新密钥</button>`;
+
+    // 套餐
+    const pl = await api('/api/plans');
+    PLAN_CACHE = pl.plans;
+    $('#planBox').innerHTML = pl.plans.map((p, i) => `
+      <div class="plan ${i===0?'on':''}" data-plan="${esc(p.key)}" onclick="pickPlan(this)">
+        <div class="plan-l"><b>${esc(p.name)}</b><span>可查看全部营地的完整联系方式</span></div>
+        <div class="plan-r"><b>${(p.amount_fen/100).toFixed(0)}</b><span>元 / ${p.days>=36500?'终身':(p.days/365|0)+'年'}</span></div>
+      </div>`).join('') + `<button class="btn btn-orange" style="width:100%;margin-top:4px" onclick="checkout()">立即开通</button>`;
+
+    const pts = await api('/api/points');
+    $('#exBox').innerHTML = pts.exchange.map(x => {
+      const can = (ME.points || 0) >= x.points;
+      return `<div class="plan" style="${can?'':'opacity:.5;cursor:not-allowed'}" ${can?`onclick="doExchange(${x.points})"`:''}>
+        <div class="plan-l"><b>${x.points} 积分</b><span>兑换 ${x.days} 天会员</span></div>
+        <div class="plan-r"><b style="font-size:15px">${can?'可兑换':'积分不足'}</b></div></div>`;
+    }).join('');
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function rotateKey() {
+  if (!confirm('换发后旧密钥立即失效，所有设备需用新密钥重新登录。确定继续？')) return;
+  try {
+    const d = await api('/api/auth/key/rotate', {method:'POST'});
+    TOKEN = ''; ME = null;
+    localStorage.removeItem('rv_token');
+    renderAcct();
+    showKeyCard(d.secret_key, '', false);
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+function pickPlan(el) {
+  document.querySelectorAll('#planBox .plan').forEach(x => x.classList.remove('on'));
+  el.classList.add('on');
+}
+
+async function checkout() {
+  const el = document.querySelector('#planBox .plan.on');
+  if (!el) return toast('请选择套餐');
+  if (!ME) { openLogin(); return; }
+  try {
+    const o = await api('/api/orders', {method:'POST', body: JSON.stringify({plan: el.dataset.plan})});
+    // 真实环境：此处跳转微信支付 / 支付宝收银台
+    const r = await api('/api/orders/' + o.order_no + '/mock-pay', {method:'POST'});
+    ME = r.user; renderAcct();
+    toast('开通成功，有效期至 ' + r.expire_at.slice(0,10), 'ok');
+    closeModal();
+    if (state.currentId) openSpot(state.currentId); else loadSpots(true);
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function doExchange(points) {
+  try {
+    const r = await api('/api/points/exchange/' + points, {method:'POST'});
+    ME = r.user; renderAcct(); loadMember();
+    toast(`兑换成功，+${r.days} 天会员`, 'ok');
+    if (state.currentId) openSpot(state.currentId); else loadSpots(true);
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+/* ---------------- 账户区渲染 ---------------- */
+function renderAcct() {
+  const box = $('#acct');
+  if (!ME) {
+    box.innerHTML = `
+      <button class="panel acct-btn" onclick="openMember()">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2l2.6 5.6 6.2.8-4.5 4.3 1.1 6.1L12 16l-5.4 2.8 1.1-6.1L3.2 8.4l6.2-.8z"/></svg>
+        <span class="lbl">会员</span>
+      </button>
+      <button class="panel acct-btn" onclick="startPick()">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        <span class="lbl">添加营地</span>
+      </button>
+      <button class="btn btn-primary" style="height:46px" onclick="issueKey()">免费领密钥</button>
+      <button class="panel acct-btn" onclick="openLogin()" style="padding:0 13px">登录</button>`;
+  } else {
+    box.innerHTML = `
+      ${ME.is_admin ? `<button class="panel acct-btn" onclick="location.href='/admin'"><span class="lbl">管理后台</span></button>` : ''}
+      <button class="panel acct-btn bell" onclick="openNotifications()" title="消息中心" style="padding:0 12px">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 10-12 0c0 7-3 8-3 8h18s-3-1-3-8"/><path d="M13.7 21a2 2 0 01-3.4 0"/></svg>
+        <span class="dot" id="bellDot">0</span>
+      </button>
+      <button class="panel acct-btn" onclick="openMember()">
+        <span class="lbl" style="color:var(--ink-2)">积分</span>
+        <b style="color:var(--green-d)">${ME.points ?? 0}</b>
+      </button>
+      <button class="panel acct-btn" onclick="startPick()">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        <span class="lbl">添加营地</span>
+      </button>
+      <button class="panel acct-btn" onclick="openMember()">
+        <div class="avatar">${esc((ME.nickname||'游')[0])}</div>
+        ${ME.is_member ? '<span class="badge-vip">会员</span>' : ''}
+      </button>
+      <button class="panel acct-btn" onclick="doLogout()" title="退出登录" style="padding:0 12px;color:var(--ink-3)">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+      </button>`;
+  }
+}
+
+function doLogout() {
+  api('/api/auth/logout', {method:'POST'}).catch(()=>{});
+  TOKEN = ''; ME = null;
+  localStorage.removeItem('rv_token');
+  renderAcct(); loadSpots(true);
+  toast('已退出登录');
+}
+
+/* GCJ-02 -> WGS-84：正向算法没有解析逆，用三次迭代逼近即可
+   （一次迭代误差约 1 米，三次后 < 0.1 米，足够地图展示）。
+   切到 OSM / CARTO 这类 WGS-84 底图时，库里存的火星坐标要反算回来，
+   否则标记点会整体偏移 300~800 米。 */
+function gcj02ToWgs84(lng, lat) {
+  if (lng < 72.004 || lng > 137.8347 || lat < 0.8293 || lat > 55.8271) return [lng, lat];
+  let wlng = lng, wlat = lat;
+  for (let i = 0; i < 3; i++) {
+    const g = wgs84ToGcj02(wlng, wlat);
+    wlng += lng - g[0];
+    wlat += lat - g[1];
+  }
+  return [wlng, wlat];
+}
+
+/* ---------------- 定位 ---------------- */
+function locateMe() {
+  if (!navigator.geolocation) return toast('浏览器不支持定位', 'err');
+  navigator.geolocation.getCurrentPosition(
+    p => {
+      // GPS 给的是 WGS-84。底图是 WGS-84（OSM/CARTO/Esri）就直接用，
+      // 只有切到国内源时才需要转 GCJ-02，否则会偏 500 米。
+      const g = coordIsWgs84()
+        ? [p.coords.longitude, p.coords.latitude]
+        : wgs84ToGcj02(p.coords.longitude, p.coords.latitude);
+      map.setView([g[1], g[0]], 12);
+      L.circleMarker([g[1], g[0]], {radius:7, color:'#fff', weight:3, fillColor:'#3B7DD8', fillOpacity:1})
+        .addTo(map).bindPopup('你的位置').openPopup();
+      toast('已定位到当前位置');
+    },
+    () => toast('定位失败，请检查浏览器权限', 'err'),
+    {timeout: 8000}
+  );
+}
+
+// 前端也需要一份纠偏算法：浏览器定位给 WGS-84，地图是高德 GCJ-02
+function wgs84ToGcj02(lng, lat) {
+  const A = 6378245.0, EE = 0.00669342162296594323;
+  if (lng < 72.004 || lng > 137.8347 || lat < 0.8293 || lat > 55.8271) return [lng, lat];
+  const tfLat = (x, y) => {
+    let r = -100 + 2*x + 3*y + 0.2*y*y + 0.1*x*y + 0.2*Math.sqrt(Math.abs(x));
+    r += (20*Math.sin(6*x*Math.PI) + 20*Math.sin(2*x*Math.PI)) * 2/3;
+    r += (20*Math.sin(y*Math.PI) + 40*Math.sin(y/3*Math.PI)) * 2/3;
+    r += (160*Math.sin(y/12*Math.PI) + 320*Math.sin(y*Math.PI/30)) * 2/3;
+    return r;
+  };
+  const tfLng = (x, y) => {
+    let r = 300 + x + 2*y + 0.1*x*x + 0.1*x*y + 0.1*Math.sqrt(Math.abs(x));
+    r += (20*Math.sin(6*x*Math.PI) + 20*Math.sin(2*x*Math.PI)) * 2/3;
+    r += (20*Math.sin(x*Math.PI) + 40*Math.sin(x/3*Math.PI)) * 2/3;
+    r += (150*Math.sin(x/12*Math.PI) + 300*Math.sin(x/30*Math.PI)) * 2/3;
+    return r;
+  };
+  let dLat = tfLat(lng - 105, lat - 35), dLng = tfLng(lng - 105, lat - 35);
+  const rad = lat / 180 * Math.PI;
+  let magic = Math.sin(rad); magic = 1 - EE * magic * magic;
+  const sq = Math.sqrt(magic);
+  dLat = (dLat * 180) / ((A * (1 - EE)) / (magic * sq) * Math.PI);
+  dLng = (dLng * 180) / (A / sq * Math.cos(rad) * Math.PI);
+  return [lng + dLng, lat + dLat];
+}
+
+/* ---------------- 全局搜索 ----------------
+   以前搜索只是在"当前视野已加载的点"里做字符串过滤：
+   地图停在北京时搜"三亚"永远没有结果。现在直接查全库，
+   结果也能跳到地图上的任意位置。 */
+let searchSeq = 0;
+async function doSearch(kw) {
+  const panel = $('#searchPanel');
+  $('#qClear').style.display = kw ? 'grid' : 'none';
+  if (!kw) { clearSearch(); return; }
+  if (!API_OK) {                       // 离线演示：退回本地过滤
+    state.kw = kw;
+    render(filtered(DEMO_SPOTS));
+    return;
+  }
+  const seq = ++searchSeq;             // 丢弃过期响应，防止快速输入时结果乱序
+  try {
+    const d = await api('/api/search?q=' + encodeURIComponent(kw) + '&size=20');
+    if (seq !== searchSeq) return;
+    if (!d.items.length) {
+      panel.innerHTML = `<div class="sp-foot">没有找到与「${esc(kw)}」相关的营地，换个关键词试试</div>`;
+      panel.classList.add('show');
+      return;
+    }
+    panel.innerHTML = d.items.map(s => `
+      <div class="sp-item" onclick="gotoSpot(${s.id})">
+        <div class="sp-ico">${esc((s.spot_type || '营')[0])}</div>
+        <div class="sp-main">
+          <div class="sp-name">${esc(s.name)}</div>
+          <div class="sp-sub">${esc([s.province, s.city].filter(Boolean).join(' · ') || s.spot_type)}</div>
+        </div>
+        ${s.verify_score ? `<div style="font-size:12px;color:var(--green-d);font-weight:600">${s.verify_score.toFixed(1)}</div>` : ''}
+      </div>`).join('')
+      + `<div class="sp-foot">全库匹配 ${d.total} 条，显示前 ${d.items.length} 条</div>`;
+    panel.classList.add('show');
+  } catch (e) {
+    if (seq === searchSeq) panel.classList.remove('show');
+  }
+}
+
+function gotoSpot(id) {
+  const s = (state.spots || []).find(x => x.id === id);
+  $('#searchPanel').classList.remove('show');
+  api('/api/spots/' + id).then(sd => {
+    map.setView(spotLatLng(sd), 13, {animate: true});
+    openSpot(id);
+  }).catch(() => openSpot(id));
+}
+
+function clearSearch() {
+  $('#q').value = '';
+  $('#qClear').style.display = 'none';
+  $('#searchPanel').classList.remove('show');
+  state.kw = '';
+  loadSpots(true);
+}
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('.search')) $('#searchPanel').classList.remove('show');
+});
+
+/* ---------------- 通知中心 ----------------
+   用户提交营地后最关心"过审了吗"。没有通知就只能反复刷新页面。 */
+async function refreshBell() {
+  const dot = document.querySelector('#bellDot');
+  if (!dot || !ME || !API_OK) return;
+  try {
+    const d = await api('/api/notifications/unread');
+    dot.textContent = d.unread > 99 ? '99+' : d.unread;
+    dot.classList.toggle('on', d.unread > 0);
+  } catch (e) { /* 静默失败：通知不该影响主流程 */ }
+}
+
+function openNotifications() {
+  openModal(`
+    <div class="modal-head">
+      <h2>消息中心</h2>
+      <p>提交审核、积分变动、会员到期的通知都会出现在这里</p>
+    </div>
+    <div class="modal-body">
+      <div id="noticeList"><div class="empty">加载中…</div></div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="btn btn-ghost btn-sm" style="flex:1" onclick="markAllRead()">全部已读</button>
+        <button class="btn btn-primary btn-sm" style="flex:1" onclick="closeModal()">关闭</button>
+      </div>
+    </div>`);
+  loadNotifications();
+}
+
+async function loadNotifications() {
+  const box = $('#noticeList');
+  if (!box) return;
+  if (!ME) { box.innerHTML = '<div class="empty">请先登录</div>'; return; }
+  try {
+    const d = await api('/api/notifications?limit=40');
+    if (!d.items.length) { box.innerHTML = '<div class="empty">还没有消息</div>'; return; }
+    box.innerHTML = d.items.map(n => `
+      <div class="notice ${n.is_read ? '' : 'unread'}">
+        <div class="n-body">
+          <div class="n-title">${esc(n.title)}</div>
+          ${n.body ? `<div class="n-text">${esc(n.body)}</div>` : ''}
+          <div class="n-time">${esc((n.created_at || '').slice(0, 16).replace('T', ' '))}</div>
+        </div>
+        ${n.is_read ? '' : `<button class="btn btn-ghost btn-sm" onclick="markRead(${n.id})">已读</button>`}
+      </div>`).join('');
+    refreshBell();
+  } catch (e) { box.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+}
+
+async function markRead(id) {
+  await api('/api/notifications/' + id + '/read', {method: 'POST'}).catch(() => {});
+  loadNotifications();
+}
+async function markAllRead() {
+  await api('/api/notifications/read-all', {method: 'POST'}).catch(() => {});
+  loadNotifications();
+  toast('已全部标记为已读', 'ok');
+}
+
+/* ---------------- 我的提交 ---------------- */
+function openMySpots() {
+  openModal(`
+    <div class="modal-head">
+      <h2>我的提交</h2>
+      <p>查看你提交的营地当前处于什么状态</p>
+    </div>
+    <div class="modal-body">
+      <div id="mySpotList"><div class="empty">加载中…</div></div>
+      <button class="btn btn-primary" style="width:100%;margin-top:10px" onclick="closeModal()">关闭</button>
+    </div>`);
+  loadMySpots();
+}
+
+async function loadMySpots() {
+  const box = $('#mySpotList');
+  if (!box) return;
+  try {
+    const d = await api('/api/my/spots');
+    const txt = d.status_text || {};
+    if (!d.items.length) {
+      box.innerHTML = '<div class="empty">还没有提交过营地，点击地图上的「添加营地」试试</div>';
+      return;
+    }
+    box.innerHTML = d.items.map(s => `
+      <div class="myspot">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13.5px;font-weight:500">${esc(s.name)}</div>
+          <div style="font-size:11.5px;color:var(--ink-3);margin-top:3px">
+            ${esc((s.created_at || '').slice(0, 10))}${s.reject_reason ? ' · ' + esc(s.reject_reason) : ''}
+          </div>
+        </div>
+        <span class="st st-${s.status}">${esc(txt[s.status] || '未知')}</span>
+      </div>`).join('');
+  } catch (e) { box.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+}
+
+/* ---------------- 启动 ---------------- */
+$('#q').addEventListener('input', e => {
+  const kw = e.target.value.trim();
+  clearTimeout(window._kwT);
+  window._kwT = setTimeout(() => doSearch(kw), 300);
+});
+$('#q').addEventListener('keydown', e => {
+  if (e.key === 'Escape') clearSearch();
+  if (e.key === 'Enter') doSearch(e.target.value.trim());
+});
+
+async function boot() {
+  try {
+    const m = await api('/api/meta');
+    API_OK = true;
+    QUOTA_LIMIT = m.free_quota || 3;
+    if (m.demo_keys && m.demo_keys.user_key) DEMO_USER_KEY = m.demo_keys.user_key;
+    // 以后端返回的代理前缀为准（空 = 运维显式要求直连源站，那就照办）
+    if (m.tile_proxy !== undefined && m.tile_proxy !== TILE_PROXY) {
+      TILE_PROXY = m.tile_proxy;
+      applyProvider(curProvider, true);
+    }
+  } catch (e) {
+    API_OK = false;
+  }
+  $('#modeChip').innerHTML = API_OK
+    ? `<span class="mode-chip chip-live">● 已连接后端</span>`
+    : `<span class="mode-chip chip-demo">● 演示数据</span>`;
+
+  if (TOKEN && API_OK) {
+    try {
+      const d = await api('/api/auth/me');
+      ME = d.user;
+    } catch (e) { TOKEN = ''; localStorage.removeItem('rv_token'); }
+  }
+  renderAcct();
+  refreshBell();
+  buildFilters();
+  await loadSpots();
+  if (!API_OK) {
+    $('#tip').innerHTML = '当前为演示模式（后端未启动）· 点击「添加营地」需先启动后端服务';
+  }
+
+  // URL hash 直达：/#login、/#member、/#key、/#spot-12 方便分享入口和调试
+  const h = location.hash.replace('#', '');
+  if (h === 'login') setTimeout(openLogin, 200);
+  else if (h === 'member') setTimeout(openMember, 200);
+  else if (h === 'key') setTimeout(issueKey, 200);
+  else if (h.startsWith('spot-')) {
+    const sid = parseInt(h.slice(5), 10);
+    if (sid) setTimeout(() => openSpot(sid), 400);
+  }
+
+  setTimeout(() => { $('#tip').style.opacity = '1'; }, 400);
+}
+
+/* ==================================================================
+   COMPLIANT_CN_BASEMAP —— 面向中国大陆用户上线时，把 TILE_PROVIDERS
+   整体替换成下面这两条（有审图号的合规底图）即可，其余代码无需改动：
+
+   const TILE_PROVIDERS = [
+     // 天地图矢量底图（CGCS2000 坐标，等同 WGS-84 用法，不需纠偏）
+     { id:'tdt_v',  name:'天地图矢量', kind:'raster', coord:'wgs84', maxZoom:18,
+       url:'https://t{s}.tianditu.gov.cn/vec_w/wmts?SERVICE=WMTS&REQUEST=GetTile'
+         + '&VERSION=1.0.0&LAYER=vec&STYLE=default&TILEMATRIXSET=w'
+         + '&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=<你的Key>',
+       subdomains:'01234567',
+       attr:'© 天地图（国家地理信息公共服务平台）' },
+     // 天地图影像底图
+     { id:'tdt_i',  name:'天地图影像', kind:'raster', coord:'wgs84', maxZoom:18,
+       url:'https://t{s}.tianditu.gov.cn/img_w/wmts?SERVICE=WMTS&REQUEST=GetTile'
+         + '&VERSION=1.0.0&LAYER=img&STYLE=default&TILEMATRIXSET=w'
+         + '&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=<你的Key>',
+       subdomains:'01234567',
+       attr:'© 天地图（国家地理信息公共服务平台）' },
+   ];
+
+   Key 申请地址：https://console.tianditu.gov.cn/api/key （个人实名免费，有日配额）
+   注意：Key 写在前端可被抓包，务必在天地图控制台配「Referer 域名白名单」；
+        正式商用建议由后端代理转发瓦片，Key 不出服务端。
+   若改用高德/腾讯（GCJ-02），把 coord 改成 'gcj02'，系统会自动做火星偏移。
+
+   为什么现在默认不放这个：开发/演示阶段没 Key，且用户体验不到区别；
+   但要正式对外运营（尤其收费），这一替换是必须动作。
+   ================================================================== */
+
+boot();
+</script>
+</body>
+</html>

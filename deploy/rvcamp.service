@@ -1,0 +1,32 @@
+[Unit]
+Description=房车露营营地地图
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/rv-camp-map/backend
+
+# 生产必配：PEPPER 缺失时服务会拒绝启动（fail-fast）
+Environment=RVCAMP_DEV=0
+Environment=RVCAMP_CORS=https://your-domain.com
+Environment=RVCAMP_ADMIN_PATH=/rv-backstage-7f3a
+Environment=RVCAMP_LOG_LEVEL=INFO
+EnvironmentFile=/opt/rv-camp-map/.env
+
+ExecStart=/opt/rv-camp-map/backend/.venv/bin/python -m uvicorn app:app \
+          --host 127.0.0.1 --port 8000 --workers 2
+
+Restart=always
+RestartSec=3
+
+# 安全加固：即使服务被拿下，也很难从这里提权
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/rv-camp-map/data
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,26 @@
+# 离线瓦片发布服务。只在"形态 B：完全离线"时需要。
+# 形态 A（默认的自建代理）不需要这个文件。
+#
+# 运行：
+#   docker compose -f docker-compose.tiles.yml up -d
+# 然后后端加环境变量 RVCAMP_TILE_UPSTREAM_OFM=http://127.0.0.1:7800，
+# 前端一行都不用改。
+
+services:
+  tiles:
+    image: ghcr.io/maplibre/martin:latest
+    container_name: rvcamp-tiles
+    restart: unless-stopped
+    # 只监听本机：对外一律走后端 /tiles 代理，不直接暴露
+    ports:
+      - "127.0.0.1:7800:3000"
+    volumes:
+      - ./china.mbtiles:/data/china.mbtiles:ro
+    environment:
+      RUST_LOG: info
+    command: ["--listen-addresses", "0.0.0.0:3000", "/data/china.mbtiles"]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

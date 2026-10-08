@@ -1,0 +1,37 @@
+services:
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: rv-camp-map:latest
+    container_name: rvcamp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"     # 只监听本机，由 nginx 对外；改 0.0.0.0 前先想清楚
+    environment:
+      # 生产模式：关掉演示支付、收紧 CORS
+      RVCAMP_DEV: "0"
+      # 必填：密钥哈希的 pepper。生成方式见 .env.example
+      RVCAMP_PEPPER: "${RVCAMP_PEPPER:?请先在 .env 里设置 RVCAMP_PEPPER}"
+      RVCAMP_CORS: "https://your-domain.com"
+      # 后台路径改成随机串，别用 /admin
+      RVCAMP_ADMIN_PATH: "/rv-backstage-7f3a"
+      # 后台 IP 白名单（换成你自己的出口 IP 或网段）
+      RVCAMP_ADMIN_IP_WHITELIST: ""
+      RVCAMP_FREE_QUOTA: "3"
+      # 底图走自建代理：/tiles -> 后端 tileproxy.py（磁盘缓存 + 防盗链），零 Key
+      RVCAMP_TILE_PROXY: "/tiles"
+      # 换成本地离线瓦片服务后，把这一行打开并指向它
+      # RVCAMP_TILE_UPSTREAM_OFM: "http://tiles:3000"
+      RVCAMP_TILE_CACHE_MB: "4096"
+      RVCAMP_LOG_LEVEL: "INFO"
+    volumes:
+      - rvcamp-data:/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+volumes:
+  rvcamp-data:

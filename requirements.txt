@@ -1,0 +1,5 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9
+# 图片处理：剥离 EXIF（含 GPS）、生成缩略图
+Pillow>=10.0
