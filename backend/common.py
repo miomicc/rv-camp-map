@@ -26,7 +26,7 @@ POINT_RULES = {
     "rate_spot": 3,           # 评价他人营地
     "spot_good_rated": 5,     # 自己的营地被评 4 星以上
     "daily_login": 2,         # 每日首次登录
-    "invite_reward": 20,      # 邀请一个真人，且对方达标之后（见 invite.py）
+    "invite_reward": 20,      # 邀请一个真人：反作弊判定通过后当场发放（见 invite.py）
     "spot_stale_reported": -30,  # 提交的营地被多人举报失效
 }
 
@@ -226,10 +226,11 @@ def unique_user_no(conn) -> str:
 
 
 def grant_daily_login(conn, uid: int) -> None:
-    """每日首次登录送积分。密钥登录、账号登录、手机号登录共用这一份逻辑。
+    """每日首次登录送积分。密钥登录、账号登录共用这一份逻辑。
 
-    顺带做一次邀请结算：判断"被邀请人是不是真的在用"靠的就是回访天数，
-    这里正好是唯一能稳定观察到他今天来了的地方。
+    顺带调一次 invite.settle：新版邀请在 bind() 里当场结算，这里只剩给
+    老版本遗留的 pending 记录兜底（见 invite.settle 的注释），没有 pending
+    记录时就是一次带索引的空查询。
     """
     today = db.now_iso()[:10]
     got = conn.execute(

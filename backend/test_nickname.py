@@ -105,6 +105,64 @@ except sqlite3.IntegrityError:
     check("重复昵称被数据库拒绝", True)
 cur.close()
 
+# ---- 旧库升级：users 表重建不能丢密钥 ----
+# _rebuild_users_table 曾经把拷贝列写死，漏了 user_no / secret_key_hash /
+# key_preview：旧库（username 还是 NOT NULL 的那种）一升级，所有用户的密钥
+# 和编号全部清零，等于全员锁死，而且不报错。这里固化"重建后数据还在"。
+tmp_db2 = os.path.join(tempfile.mkdtemp(), "rebuild.db")
+_old = sqlite3.connect(tmp_db2)
+_old.executescript("""
+CREATE TABLE users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_no TEXT NOT NULL UNIQUE,
+    secret_key_hash TEXT UNIQUE,
+    key_preview TEXT NOT NULL DEFAULT '',
+    username TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL DEFAULT '',
+    salt TEXT NOT NULL DEFAULT '',
+    nickname TEXT NOT NULL DEFAULT '',
+    level INTEGER NOT NULL DEFAULT 0,
+    points INTEGER NOT NULL DEFAULT 0,
+    expire_at TEXT,
+    is_admin INTEGER NOT NULL DEFAULT 0,
+    is_banned INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE spots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL, lng REAL, lat REAL, province TEXT DEFAULT '', city TEXT DEFAULT '',
+    spot_type TEXT DEFAULT '', address TEXT DEFAULT '', phone TEXT DEFAULT '',
+    price_range TEXT DEFAULT '', facilities TEXT DEFAULT '[]', detail TEXT DEFAULT '',
+    images TEXT DEFAULT '[]', status INTEGER DEFAULT 0, reject_reason TEXT DEFAULT '',
+    created_by INTEGER, created_at TEXT, updated_at TEXT,
+    verify_score REAL DEFAULT 0, verify_count INTEGER DEFAULT 0, report_count INTEGER DEFAULT 0
+);
+""")
+_old.execute("INSERT INTO users(user_no, secret_key_hash, key_preview, username,"
+             " password_hash, salt, nickname, points, created_at)"
+             " VALUES('90000001','hash-abc','B-9p','olduser','ph','salt','老用户',42,?)",
+             (now,))
+_old.execute("INSERT INTO spots(name, lng, lat, created_by, created_at, updated_at)"
+             " VALUES('某个营地',116.0,39.0,1,?,?)", (now, now))
+_old.commit()
+_old.close()
+
+_saved_path = db.DB_PATH
+db.DB_PATH = tmp_db2
+try:
+    db.init_db()      # username 是 NOT NULL -> 触发表重建
+    with db.get_conn() as c:
+        r = c.execute("SELECT user_no, secret_key_hash, key_preview, nickname, points"
+                      " FROM users").fetchone()
+        check("旧库重建：密钥/编号/积分不丢",
+              bool(r) and r["user_no"] == "90000001" and r["secret_key_hash"] == "hash-abc"
+              and r["key_preview"] == "B-9p" and r["points"] == 42,
+              f"-> {dict(r) if r else None}")
+        check("旧库重建：外键引用不断",
+              c.execute("SELECT COUNT(*) FROM spots WHERE created_by=1").fetchone()[0] == 1)
+finally:
+    db.DB_PATH = _saved_path
+
 line("B. 接口层：自己改昵称")
 _K = devkeys.load()
 s, ad = call("POST", "/api/auth/login",
@@ -219,13 +277,24 @@ s, d = call("POST", f"/api/auth/key/issue?nickname={urllib.parse.quote(fresh_nic
 check("领密钥时昵称合法则通过", s == 200, f"-> {s} {d.get('user', {}).get('nickname')}")
 
 uname = "nicktest" + str(random.randrange(10000, 99999))
+cid, code = captcha_pair()
 s, d = call("POST", "/api/auth/register",
-            {"username": uname, "password": "Abcd123!"})
+            {"username": uname, "password": "Abcd123!",
+             "captcha_id": cid, "captcha_code": code})
 if s == 200:
     check("注册时不填昵称也能成功", bool(d.get("user", {}).get("nickname")),
           f"-> {d.get('user', {}).get('nickname')}")
 else:
     check("注册空昵称", False, f"-> {s} {d.get('detail', '')}")
+
+# 注册与领密钥同一套门：没有验证码不许开账号
+# （先清限流计数，否则这天级建号上限会先于验证码返回 429，测的就不是同一件事了）
+clear_limits()
+s, d = call("POST", "/api/auth/register",
+            {"username": "nicktest" + str(random.randrange(10000, 99999)),
+             "password": "Abcd123!"})
+check("注册也要过验证码", s == 400 and "验证码" in str(d.get("detail", "")),
+      f"-> {s} {d.get('detail', '')}")
 
 # 还原，方便下次演示
 call("POST", f"/api/admin/users/{UID}/nickname", {"nickname": ORIG}, AT)

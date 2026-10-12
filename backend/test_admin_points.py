@@ -111,9 +111,12 @@ check("用户收到积分通知", "积分已增加" in titles and "积分已扣�
       f"-> {s} {titles[:4]}")
 
 line("6. 列表积分同步")
-s, users = call("GET", "/api/admin/users?size=100", token=AT)
-now = next(u for u in users["items"] if u["id"] == uid)
-check("列表里的积分已更新", now["points"] == mid - 20, f"{now['points']}")
+# 按用户编号关键词查：开发库里账号会越攒越多（测试每跑一遍都新建号），
+# 按 id 倒序翻页迟早翻不到这个早期建的测试账号
+s, users = call("GET", f"/api/admin/users?keyword={me['user_no']}&size=20", token=AT)
+now = next((u for u in users["items"] if u["id"] == uid), None)
+check("列表里的积分已更新", now is not None and now["points"] == mid - 20,
+      f"-> {now['points'] if now else '未找到'}")
 
 line("7. 审计留痕")
 s, al = call("GET", "/api/admin/audit?limit=50", token=AT)

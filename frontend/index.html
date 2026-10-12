@@ -393,8 +393,8 @@ const state = {
 let QUOTA_LIMIT = 3;
 // 昵称长度限制同样由后端下发，前后端校验保持一致
 let NICK_MIN = 2, NICK_MAX = 16;
-// 邀请：奖励分与生效门槛由 /api/meta 下发
-let INVITE_REWARD = 20, INVITE_NEED_DAYS = 2, INVITE_BIND_DAYS = 7;
+// 邀请奖励分：boot() 时从 /api/meta 同步真实值（后端可用环境变量调整）
+let INVITE_REWARD = 20;
 // 从邀请链接进来的人，先把邀请码暂存下来，等他领密钥时自动带上
 let PENDING_INVITE = '';
 
@@ -1012,8 +1012,8 @@ async function issueKey() {
                autocomplete="off" spellcheck="false" value="${esc(PENDING_INVITE)}"
                style="letter-spacing:2px;text-transform:uppercase">
         <div style="font-size:12px;color:var(--ink-3);margin-top:6px;line-height:1.6">
-          填了邀请码，等你在平台活跃起来（回访几天或提交一个营地），
-          对方就能拿到 ${INVITE_REWARD} 积分。同一台设备同一个网络邀请自己是不算的。
+          填了邀请码，你注册成功的那一刻对方立即可得 ${INVITE_REWARD} 积分。
+          同一台设备同一个网络邀请自己是不算的。
         </div>
       </div>
       <div id="capTip" style="display:none;color:var(--red);font-size:12.5px;margin-bottom:10px"></div>
@@ -1042,9 +1042,10 @@ async function submitIssueKey() {
     PENDING_INVITE = '';
     try { localStorage.removeItem('rv_invite'); } catch (e) {}
     renderAcct();
-    showKeyCard(d.secret_key, d.user.user_no, true);
-    // 邀请码不成立也要明确告知：不声响地"没生效"最容易被当成系统吞了积分
-    if (d.invite_status === 'pending') toast('邀请已生效，对方活跃后到账', 'ok');
+    showKeyCard(d.secret_key, d.user.user_no, true, d.warning);
+    // 邀请码不成立也要明确告知：不声响地"没生效"最容易被当成系统吞了积分。
+    // 注意视角：判定通过时分发在**邀请人**账上，别让领密钥的人误解成自己到账
+    if (d.invite_status === 'rewarded') toast('邀请码已生效，对方获得 ' + INVITE_REWARD + ' 积分', 'ok');
     else if (d.invite_status === 'rejected') toast('邀请未生效：' + d.invite_message, 'err');
   } catch (e) {
     err.textContent = e.message; err.style.display = 'block';
@@ -1054,7 +1055,7 @@ async function submitIssueKey() {
 }
 
 /* ---- 密钥卡片：明文只出现这一次 ---- */
-function showKeyCard(key, userNo, isNew) {
+function showKeyCard(key, userNo, isNew, warning) {
   const groups = key.split('-');
   openModal(`
     <div class="modal-head">
@@ -1070,7 +1071,8 @@ function showKeyCard(key, userNo, isNew) {
         <button class="btn btn-ghost btn-sm" style="flex:1" onclick="copyKey('${esc(key)}')">复制密钥</button>
         <button class="btn btn-ghost btn-sm" style="flex:1" onclick="downloadKey('${esc(key)}','${esc(userNo)}')">下载保存</button>
       </div>
-      <div style="padding:12px;background:var(--orange-l);border-radius:9px;font-size:12.5px;color:#8A4A14;line-height:1.7">
+      ${warning ? `<div style="padding:12px;background:var(--orange-l);border-radius:9px;font-size:12.5px;color:#8A4A14;line-height:1.7;margin-bottom:12px">${esc(warning)}</div>` : ''}
+      <div style="padding:12px;background:var(--bg);border-radius:9px;font-size:12.5px;color:var(--ink-2);line-height:1.7">
         <b>为什么要自己保存？</b><br>
         服务端只存储密钥的哈希值，无法还原成明文。这保证了即使数据库泄露，你的账号也不会被盗——
         但代价是丢了就找不回来。建议存到密码管理器，或截图保存到私密相册。
@@ -1877,6 +1879,7 @@ async function boot() {
     QUOTA_LIMIT = m.free_quota || 3;
     NICK_MIN = m.nickname_min || 2;
     NICK_MAX = m.nickname_max || 16;
+    if (m.invite_reward) INVITE_REWARD = m.invite_reward;
     if (m.demo_keys && m.demo_keys.user_key) DEMO_USER_KEY = m.demo_keys.user_key;
     // 以后端返回的代理前缀为准（空 = 运维显式要求直连源站，那就照办）
     if (m.tile_proxy !== undefined && m.tile_proxy !== TILE_PROXY) {

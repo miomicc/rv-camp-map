@@ -166,6 +166,8 @@ class RegisterIn(BaseModel):
     nickname: str = Field(default="", max_length=24)
     invite: str = Field(default="", max_length=16)   # 邀请码，选填
     device: str = Field(default="", max_length=64)   # 设备指纹，判定"是不是同一台电脑"
+    captcha_id: str = Field(default="")
+    captcha_code: str = Field(default="")
 
 
 class InviteBindIn(BaseModel):
@@ -222,8 +224,21 @@ class KeyLoginIn(BaseModel):
 
 @app.post("/api/auth/register")
 def register(body: RegisterIn, request: Request):
-    ratelimit.rule("issue_key", client_ip(request), "注册太频繁")
+    """账号密码注册。前端没有入口（用户端只保留密钥登录），
+    保留给应急管理员与 API 对接——但正因没有前端把关，
+    防刷的门槛必须和领密钥一致：验证码 + 天级建号上限，
+    否则它就成了全站唯一一个"匿名、无验证码、能批量开账号"的门。
+    """
+    ip = client_ip(request)
+    ratelimit.rule("issue_key", ip, "注册太频繁")
+    # 与领密钥共用同一套天级上限：两个口子是同一个语义——"开一个新账号"
+    ratelimit.rule("issue_key_ip_day", ip, "今天新注册的账号太多了")
+    if body.device:
+        ratelimit.rule("issue_key_dev_day", db.hash_device(body.device),
+                       "这台设备今天新注册的账号太多了")
     with db.get_conn() as conn:
+        if captcha.enabled():
+            captcha.verify(conn, body.captcha_id, body.captcha_code)
         exists = conn.execute("SELECT id FROM users WHERE username=?", (body.username,)).fetchone()
         if exists:
             raise HTTPException(400, "用户名已被占用")
@@ -317,8 +332,10 @@ def issue_key(request: Request, nickname: str = Query(default="", max_length=24)
                       "你的密钥是本平台唯一的登录凭证，请立即保存。"
                       "密钥不可找回，丢失后只能重新领取一个。", "welcome")
         warning = "密钥是您唯一的身份凭证，请立即保存。"
-        if ir["status"] == "pending":
-            warning = f"邀请生效了：等对方活跃起来，你会收到 {config.INVITE_REWARD} 积分。"
+        if ir["status"] == "rewarded":
+            # 判定通过的那一刻分已经记到**邀请人**账上（见 invite.bind）。
+            # 措辞按被邀请人的视角写，别让他以为是自己到账了。
+            warning = f"邀请码已生效，对方获得 {config.INVITE_REWARD} 积分。"
         elif ir["status"] == "rejected":
             warning = f"邀请码未生效：{ir['reason']}。"
         return {
@@ -656,7 +673,13 @@ def _charge_detail_quota(conn, user, spot_id: int, ip: str = "",
                     "limit": FREE_DAILY_DETAIL_QUOTA, "why": why}
 
     conn.execute(
-        "INSERT INTO detail_views(user_key, spot_id, day, created_at) VALUES(?,?,?,?)",
+        # OR IGNORE 而不是普通 INSERT：detail_views 上有 (user_key, spot_id, day)
+        # 唯一索引，同一个营地同一天被并发打开两次时，两个请求都可能穿过上面
+        # 的 existed 检查，后一个普通 INSERT 会直接 IntegrityError 500。
+        # ignore 之后计数不变（那一行已经存在），语义正是"同一天同一个营地
+        # 只扣一次"。
+        "INSERT OR IGNORE INTO detail_views(user_key, spot_id, day, created_at)"
+        " VALUES(?,?,?,?)",
         (key, spot_id, today, db.now_iso()))
     # 兜底桶按 use as well：每个账号消耗都记进它所在的网络/设备，多个号
     # 才会累加到上限而不是各算各的。这里的 spot_id 用负号做标记，避免
@@ -769,8 +792,11 @@ def spot_detail(spot_id: int, request: Request, user=Depends(current_user)):
             if not user or (user["id"] != row["created_by"] and not user["is_admin"]):
                 raise HTTPException(404, "营地不存在或尚未通过审核")
 
-        # 免费额度：这是会员转化最核心的一处门禁，必须真的执行
-        if not (user and (user["is_admin"] or db.is_member(user))):
+        # 免费额度：这是会员转化最核心的一处门禁，必须真的执行。
+        # 作者本人不扣（docstring 里一直这么写，早期代码却漏了）——营地是
+        # 他自己提交的，内容他本来就知道，再扣他 3 次额度只会让人困惑。
+        author_self = bool(user) and row["created_by"] == user["id"]
+        if not (user and (user["is_admin"] or db.is_member(user) or author_self)):
             quota = _charge_detail_quota(conn, user, spot_id,
                                          client_ip(request), _device_of(request))
             if not quota.get("ok"):
@@ -913,7 +939,7 @@ def create_spot(body: SpotIn, request: Request, user=Depends(require_user)):
         for i in imgs[:MAX_IMAGES_PER_SPOT]:
             conn.execute("UPDATE uploads SET spot_id=? WHERE path=?", (sid, i["url"]))
         db.audit(conn, user["id"], "spot_create", f"spot:{sid}", body.name)
-        # 提交营地也算"活跃"——够格让邀请人拿这一笔奖励
+        # 兜底结算老版本遗留的 pending 邀请记录（新邀请在 register/bind 当场已发）
         invite.settle(conn, user["id"])
         notify.notify(conn, user["id"], "system", "提交已收到",
                       f"「{body.name}」已提交，审核通过后将获得 "
@@ -1156,9 +1182,15 @@ def review(spot_id: int, body: ReviewIn, admin=Depends(require_admin)):
         if not row:
             raise HTTPException(404, "营地不存在")
         if body.action == "approve":
+            # 幂等：已经在线的营地再点一次"通过"不能把积分再发一遍。
+            # 这不是理论问题——被多人举报会自动转回待审（status 1->0），
+            # 此时重新审核是正常流程；但同一个 status=1 的营地被重复 approve
+            # （双击、接口重放）过去会直接再送 100 分，而 100 分能换 30 天会员，
+            # 等于给"配合管理员反复点通过"留了一条刷分通道。
+            already_live = row["status"] == 1
             conn.execute("UPDATE spots SET status=1, reject_reason='', updated_at=? WHERE id=?",
                          (db.now_iso(), spot_id))
-            if row["created_by"]:
+            if row["created_by"] and not already_live:
                 db.add_points(conn, row["created_by"], POINT_RULES["spot_approved"],
                               "spot_approved", spot_id)
                 notify.notify(conn, row["created_by"], "spot_approved", "营地上线了",
@@ -1557,9 +1589,8 @@ def meta():
             # 昵称是唯一且自助可改的，规则下发给前端保证两边校验一致
             "nickname_min": common.NICKNAME_MIN, "nickname_max": common.NICKNAME_MAX,
             "free_quota": FREE_DAILY_DETAIL_QUOTA,
-            # 邀请规则下发给前端：门槛变了不用改两处代码
+            # 邀请规则下发给前端：奖励数变了不用改两处代码
             "invite_reward": config.INVITE_REWARD,
-            "invite_need_days": config.INVITE_ACTIVATE_DAYS,
             "invite_bind_days": config.INVITE_BIND_WINDOW // 86400,
             "dev": config.DEV, "demo_keys": demo_keys,
             # 非空 = 前端走自建瓦片代理，而不是让浏览器直连源站

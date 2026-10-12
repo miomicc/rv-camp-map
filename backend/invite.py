@@ -191,8 +191,11 @@ def bind(conn, invitee_id: int, code: str, ip: str = "", fp: str = "") -> dict:
     row = conn.execute("SELECT * FROM invites WHERE invitee_id=? AND status='pending'",
                        (invitee_id,)).fetchone()
     pay(conn, row, invitee)
+    # reason 是给**被邀请人**看的（注册回包里的 invite_message）：分已经记到
+    # 邀请人账上，所以说"对方获得"而不是"已到账"——后者会让领密钥的人
+    # 误以为是自己拿了分，跑来问"我的积分呢"。
     return {"status": "rewarded", "points": config.INVITE_REWARD,
-            "reason": f"{config.INVITE_REWARD} 积分已到账",
+            "reason": f"邀请码已生效，对方获得 {config.INVITE_REWARD} 积分",
             "inviter": inviter["nickname"]}
 
 

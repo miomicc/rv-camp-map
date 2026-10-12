@@ -471,7 +471,10 @@ def migrate() -> list[str]:
 def _rebuild_users_table(conn) -> None:
     """SQLite 的官方表重建流程：建新表 -> 拷数据 -> 删旧表 -> 改名。
 
-    这一步在旧库升级时自动执行，用户数据不丢。
+    列清单必须**动态求两表交集**，不能写死：老库缺 phone/email/邀请列，
+    以后新表也可能再加列。早期版本把列名写死成 11 个，漏拷了
+    user_no / secret_key_hash / key_preview——旧库一升级，所有用户的
+    密钥和编号全部清零，等于全员锁死，而且没有任何报错。
     """
     conn.executescript("""
         PRAGMA foreign_keys=OFF;
@@ -494,15 +497,19 @@ def _rebuild_users_table(conn) -> None:
             email           TEXT,
             created_at      TEXT    NOT NULL
         );
-        INSERT INTO users_new (id, username, password_hash, salt, nickname, level, points,
-                               expire_at, is_admin, is_banned, created_at)
-        SELECT id, username, password_hash, salt, nickname, level, points,
-               expire_at, is_admin, is_banned, created_at FROM users;
-        DROP TABLE users;
-        ALTER TABLE users_new RENAME TO users;
-        CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
         PRAGMA foreign_keys=ON;
     """)
+    old_cols = [r["name"] for r in conn.execute("PRAGMA table_info(users)")]
+    new_cols = {r["name"] for r in conn.execute("PRAGMA table_info(users_new)")}
+    # id 也要拷：spots.created_by 等外接引用都指着它
+    shared = [c for c in old_cols if c in new_cols]
+    if not shared:
+        raise RuntimeError("users 表重建失败：新旧表没有共同列")
+    conn.execute(f"INSERT INTO users_new({', '.join(shared)})"
+                 f" SELECT {', '.join(shared)} FROM users")
+    conn.execute("DROP TABLE users")
+    conn.execute("ALTER TABLE users_new RENAME TO users")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)")
 
 
 def _dedupe_nicknames(conn) -> int:

@@ -285,8 +285,12 @@ def show(name, s, expect=200):
     check(name, s == expect, "" if s == expect else f"-> HTTP {s} {last.get('detail', '')}")
 
 
-IP_A, DEV_A = "203.0.113.101", "HTTP-DEV-A"
-IP_B, DEV_B = "198.51.100.102", "HTTP-DEV-B"
+# 每次运行随机换网段（精确到 /24）：邀请防刷有"同一网段 24h 内最多 5 个
+# 有效邀请"的规则（INVITE_NET_MAX），而邀请记录会留在开发库里 24 小时。
+# 用固定 IP 的话，同一天第 6 次跑本脚本就会撞上自己前几天攒下的上限，
+# 测出"邀请成立却判拒"的假失败。A 段用临时库，没有这个问题。
+IP_A, DEV_A = f"203.0.{random.randrange(0, 256)}.{random.randrange(2, 250)}", "HTTP-DEV-A"
+IP_B, DEV_B = f"198.51.{random.randrange(0, 256)}.{random.randrange(2, 250)}", "HTTP-DEV-B"
 
 # 昵称全站唯一，测试要能反复跑，所以每次都带随机后缀
 SUF = str(random.randrange(1000, 9999))
@@ -309,14 +313,18 @@ check("同网络同设备：邀请被拒", d.get("invite_status") == "rejected",
 s, d = key_issue("受邀" + SUF, IP_B, DEV_B, CODE)
 check("换网络换设备：邀请成立", d.get("invite_status") == "rewarded",
       f"-> {d.get('invite_status')} {d.get('invite_message')}")
+# 措辞按被邀请人的视角：分在邀请人账上，不能说成"已到账"让人误解成自己拿了
+check("回包文案说明分给了对方",
+      "对方" in str(d.get("invite_message", "")), f"-> {d.get('invite_message')}")
 BT = d["token"]
 s, mine2 = call("GET", "/api/invite/mine", token=AT)
 check("邀请列表里出现这位", mine2["stats"]["total"] == 1 and mine2["stats"]["rewarded"] == 1,
       f"-> {mine2['stats']}")
 check("邀请人积分已到账", mine2["stats"]["rewarded"] * 20 == 20)
 
-# 无效邀请码不影响注册
-s, d = key_issue("乱填" + SUF, "198.51.100.155", "HTTP-DEV-C", "NOTEXIST")
+# 无效邀请码不影响注册（网段也随机，避免和 IP_B 攒到同一个 /24 里）
+s, d = key_issue("乱填" + SUF, f"198.51.{random.randrange(0, 256)}.{random.randrange(2, 250)}",
+                 "HTTP-DEV-C", "NOTEXIST")
 check("邀请码填错也能注册", s == 200, f"-> {s}")
 check("但会明说未生效", d.get("invite_status") == "rejected", f"-> {d.get('invite_message')}")
 
@@ -440,6 +448,13 @@ s, _ = call("POST", f"/api/admin/spots/{SID}/review",
 check("管理员审核通过", s == 200, f"-> {s}")
 after = _points_of(AT)
 check("审核通过后才 +100", after == before + 100, f"{before} -> {after}")
+
+# 幂等：对已经在线的营地再点一次"通过"，不能把 100 分再发一遍
+# （100 分 = 30 天会员，重复发分等于给"反复点通过"留了刷分通道）
+s, _ = call("POST", f"/api/admin/spots/{SID}/review",
+            {"action": "approve"}, token=ADM)
+check("重复审核通过不重复加分", s == 200 and _points_of(AT) == after,
+      f"-> {after} -> {_points_of(AT)}")
 
 s, _ = call("POST", f"/api/admin/spots/{SID}/review",
             {"action": "reject", "reason": "重复了"}, token=ADM)
