@@ -28,6 +28,7 @@ TYPES = {
     "points": "积分变动",
     "key_rotated": "密钥已换发",
     "phone_bound": "手机号已绑定",
+    "invite": "邀请动态",
     "system": "系统通知",
 }
 

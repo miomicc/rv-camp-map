@@ -393,6 +393,32 @@ const state = {
 let QUOTA_LIMIT = 3;
 // 昵称长度限制同样由后端下发，前后端校验保持一致
 let NICK_MIN = 2, NICK_MAX = 16;
+// 邀请：奖励分与生效门槛由 /api/meta 下发
+let INVITE_REWARD = 20, INVITE_NEED_DAYS = 2, INVITE_BIND_DAYS = 7;
+// 从邀请链接进来的人，先把邀请码暂存下来，等他领密钥时自动带上
+let PENDING_INVITE = '';
+
+/* ---------------- 设备指纹 ----------------
+   只是一个存在 localStorage 里的随机串，用来回答"这两次请求是不是来自
+   同一个浏览器"。它不像 fingerprintjs 那样采集屏幕/字体/显卡——那类方案
+   精度高但属于监控性质，我们不需要知道"你是谁"，只需要知道"是不是同一台"。
+
+   服务端拿到后先哈希再落库（db.hash_device），库里只有不可逆摘要，
+   原始串连服务端自己都不存。清缓存/换浏览器就等于一台"新电脑"，
+   这是刻意的：它只是防自己的参考信号，不作为封禁凭据。 */
+function deviceId() {
+  try {
+    let v = localStorage.getItem('rv_fp');
+    if (!v) {
+      v = (crypto.randomUUID ? crypto.randomUUID()
+                             : 'fp' + Math.random().toString(36).slice(2) + Date.now());
+      localStorage.setItem('rv_fp', v);
+    }
+    return v;
+  } catch (e) {
+    return '';      // 隐私模式下 localStorage 可能不可用，那就只靠 IP 判断
+  }
+}
 
 /* ---------------- 内置演示数据（后端不可用时使用） ---------------- */
 const DEMO_SPOTS = [
@@ -705,7 +731,9 @@ async function openSpot(id) {
   state.currentId = id;
   let s;
   try {
-    s = API_OK ? await api('/api/spots/' + id) : DEMO_SPOTS.find(x => x.id === id);
+    // device 用于跨账号的额度统计（详见后端 _extra_keys），不传不影响主流程
+    s = API_OK ? await api('/api/spots/' + id + '?device=' + encodeURIComponent(deviceId()))
+               : DEMO_SPOTS.find(x => x.id === id);
   } catch (e) {
     // 402 = 今日免费额度用完，这是转化窗口，要给出明确的引导而不是一句报错
     if (/额度/.test(e.message)) return openQuotaWall(e.message);
@@ -978,6 +1006,16 @@ async function issueKey() {
       <div style="font-size:12px;color:var(--ink-3);margin-bottom:12px">
         看不清？点图片换一张。验证码 5 分钟内有效。
       </div>
+      <div class="field">
+        <label>邀请码（选填）</label>
+        <input id="inviteInput" placeholder="朋友分享给你的邀请码" maxlength="12"
+               autocomplete="off" spellcheck="false" value="${esc(PENDING_INVITE)}"
+               style="letter-spacing:2px;text-transform:uppercase">
+        <div style="font-size:12px;color:var(--ink-3);margin-top:6px;line-height:1.6">
+          填了邀请码，等你在平台活跃起来（回访几天或提交一个营地），
+          对方就能拿到 ${INVITE_REWARD} 积分。同一台设备同一个网络邀请自己是不算的。
+        </div>
+      </div>
       <div id="capTip" style="display:none;color:var(--red);font-size:12.5px;margin-bottom:10px"></div>
       <div style="display:flex;gap:9px">
         <button class="btn btn-primary" style="flex:1" onclick="submitIssueKey()">确认领取</button>
@@ -985,6 +1023,7 @@ async function issueKey() {
       </div>
     </div>`);
   await refreshCaptcha();
+  setTimeout(() => { const el = $('#inviteInput'); if (el) el.focus(); }, 60);
 }
 
 async function submitIssueKey() {
@@ -994,12 +1033,19 @@ async function submitIssueKey() {
   if (!code) { err.textContent = '请输入验证码'; err.style.display = 'block'; return; }
   try {
     const q = '?captcha_id=' + encodeURIComponent(captchaId)
-            + '&captcha_code=' + encodeURIComponent(code);
+            + '&captcha_code=' + encodeURIComponent(code)
+            + '&device=' + encodeURIComponent(deviceId())
+            + '&invite_code=' + encodeURIComponent(($('#inviteInput').value || '').trim());
     const d = await api('/api/auth/key/issue' + q, {method: 'POST'});
     TOKEN = d.token; localStorage.setItem('rv_token', TOKEN);
     ME = d.user;
+    PENDING_INVITE = '';
+    try { localStorage.removeItem('rv_invite'); } catch (e) {}
     renderAcct();
     showKeyCard(d.secret_key, d.user.user_no, true);
+    // 邀请码不成立也要明确告知：不声响地"没生效"最容易被当成系统吞了积分
+    if (d.invite_status === 'pending') toast('邀请已生效，对方活跃后到账', 'ok');
+    else if (d.invite_status === 'rejected') toast('邀请未生效：' + d.invite_message, 'err');
   } catch (e) {
     err.textContent = e.message; err.style.display = 'block';
     // 不管对错都换一张：错了是防试错，对了这张也已经用掉
@@ -1275,6 +1321,8 @@ function openMember() {
       <div id="planBox"><div class="empty">加载中…</div></div>
       <div class="sec-t">积分兑换</div>
       <div id="exBox"></div>
+      <div class="sec-t">邀请有奖</div>
+      <div id="inviteBox"><div class="empty">加载中…</div></div>
     </div>`);
   loadMember();
 }
@@ -1287,6 +1335,7 @@ async function loadMember() {
       <div class="plan"><div class="plan-l"><b>普通会员 · 三年</b><span>查看全部营地联系方式</span></div><div class="plan-r"><b>99</b><span>元 / 三年</span></div></div>
       <div class="plan"><div class="plan-l"><b>尊贵会员 · 终身</b><span>永久权限 + 专属社群</span></div><div class="plan-r"><b>299</b><span>元 / 终身</span></div></div>`;
     $('#exBox').innerHTML = `<div class="empty">演示模式不可兑换</div>`;
+    $('#inviteBox').innerHTML = `<div class="empty">演示模式不可用</div>`;
     return;
   }
   if (!ME) {
@@ -1299,6 +1348,7 @@ async function loadMember() {
     $('#quotaBox').innerHTML = '';
     $('#planBox').innerHTML = '<div class="empty">请先登录</div>';
     $('#exBox').innerHTML = '<div class="empty">请先登录</div>';
+    $('#inviteBox').innerHTML = '<div class="empty">请先登录</div>';
     return;
   }
   try {
@@ -1332,11 +1382,18 @@ async function loadMember() {
     const q = window._quota || {};
     $('#quotaBox').innerHTML = ME.is_member ? '' : `
       <div class="sec-t">今日查看额度</div>
-      <div style="display:flex;align-items:center;gap:10px;padding:11px 13px;background:var(--bg);border-radius:var(--r);margin-bottom:4px">
-        <div style="flex:1;font-size:13px;color:var(--ink-2)">已用 <b style="color:var(--ink)">${q.used ?? 0}</b> / ${q.limit ?? QUOTA_LIMIT} 个营地详情</div>
-        <div style="width:74px;height:6px;border-radius:4px;background:var(--line);overflow:hidden">
-          <div style="height:100%;width:${Math.min(100, ((q.used ?? 0) / (q.limit || QUOTA_LIMIT)) * 100)}%;background:var(--green)"></div>
+      <div style="padding:11px 13px;background:var(--bg);border-radius:var(--r);margin-bottom:4px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="flex:1;font-size:13px;color:var(--ink-2)">已用 <b style="color:var(--ink)">${q.used ?? 0}</b> / ${q.limit ?? QUOTA_LIMIT} 个营地详情</div>
+          <div style="width:74px;height:6px;border-radius:4px;background:var(--line);overflow:hidden">
+            <div style="height:100%;width:${Math.min(100, ((q.used ?? 0) / (q.limit || QUOTA_LIMIT)) * 100)}%;background:var(--green)"></div>
+          </div>
         </div>
+        ${q.blocked_by ? `<div style="margin-top:8px;font-size:12px;color:#8A4A14;background:var(--orange-l);
+            padding:7px 9px;border-radius:7px;line-height:1.6">
+            这一${q.blocked_by.why.indexOf('网络') >= 0 ? '网络' : '设备'}今天的免费额度也用完了（${q.blocked_by.used}/${q.blocked_by.cap}），
+            换一个新账号也照样受限——开通会员不受任何限制。
+          </div>` : ''}
       </div>`;
 
     $('#keyBox').innerHTML = `
@@ -1360,9 +1417,98 @@ async function loadMember() {
     $('#exBox').innerHTML = pts.exchange.map(x => {
       const can = (ME.points || 0) >= x.points;
       return `<div class="plan" style="${can?'':'opacity:.5;cursor:not-allowed'}" ${can?`onclick="doExchange(${x.points})"`:''}>
-        <div class="plan-l"><b>${x.points} 积分</b><span>兑换 ${x.days} 天会员</span></div>
+        <div class="plan-l"><b>${x.points} 积分</b><span>兑换 ${esc(x.label || x.days + ' 天')}全图查看时长</span></div>
         <div class="plan-r"><b style="font-size:15px">${can?'可兑换':'积分不足'}</b></div></div>`;
     }).join('');
+    loadInvite();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+/* ---------------- 邀请有奖 ---------------- */
+async function loadInvite() {
+  const box = $('#inviteBox');
+  if (!box || !ME) return;
+  let d;
+  try { d = await api('/api/invite/mine'); }
+  catch (e) { box.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+
+  const st = d.stats || {};
+  const copyBtn = `onclick="copyInvite()" title="点击复制"`;
+  box.innerHTML = `
+    <div style="padding:14px;background:var(--bg);border-radius:var(--r);margin-bottom:12px">
+      <div style="font-size:12.5px;color:var(--ink-2);margin-bottom:8px">
+        把这个邀请码或链接发给朋友，他注册成功你就能拿到 <b style="color:var(--green-d)">${d.reward}</b> 积分。
+      </div>
+      <div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap">
+        <code id="inviteCode" ${copyBtn}
+              style="flex:1;min-width:120px;cursor:pointer;font-size:17px;font-weight:600;letter-spacing:2.5px;
+                     font-family:ui-monospace,Menlo,monospace;background:#fff;padding:9px 12px;
+                     border-radius:8px;border:1px dashed var(--line-2);text-align:center">${esc(d.code)}</code>
+        <button class="btn btn-primary btn-sm" ${copyBtn}>复制链接</button>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;font-size:12.5px;color:var(--ink-2);margin-bottom:12px">
+      <div style="flex:1;background:var(--bg);border-radius:8px;padding:9px;text-align:center">
+        <div style="font-size:17px;font-weight:600;color:var(--green-d)">${st.rewarded || 0}</div>已到账</div>
+      <div style="flex:1;background:var(--bg);border-radius:8px;padding:9px;text-align:center">
+        <div style="font-size:17px;font-weight:600">${st.total || 0}</div>累计邀请</div>
+      <div style="flex:1;background:var(--bg);border-radius:8px;padding:9px;text-align:center">
+        <div style="font-size:17px;font-weight:600">${(st.rewarded || 0) * d.reward}</div>获得积分</div>
+    </div>
+    ${d.invited_by ? `
+      <div style="font-size:12.5px;color:var(--ink-2);background:var(--bg);border-radius:8px;
+                  padding:9px 12px;margin-bottom:12px">
+        你是被 <b>${esc(d.invited_by)}</b> 邀请来的，感谢他带你来。
+      </div>` : `
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <input id="inviteFill" maxlength="12" placeholder="我是被邀请的，填朋友的邀请码"
+               style="flex:1;letter-spacing:2px;text-transform:uppercase">
+        <button class="btn btn-ghost btn-sm" onclick="submitInvite()">提交</button>
+      </div>`}
+    <div style="font-size:12px;color:var(--ink-3);line-height:1.75;margin-bottom:10px">
+      为了防止刷分，系统会比对注册时的网络和设备：<b>同一网络且同一设备</b>
+      会被判定为本人操作而<b>不计入</b>，自己邀请自己、互相邀请同样不计入。
+      如果确实被误伤（比如一家人用同一台电脑先后注册），联系我们，
+      后台核实后可以人工补发。
+    </div>
+    ${(d.items || []).length ? `<div style="max-height:190px;overflow:auto;border:1px solid var(--line);border-radius:8px">
+      ${d.items.map(it => `
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--line)">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:500">${esc(it.invitee)}</div>
+            <div style="font-size:11.5px;color:var(--ink-3);margin-top:2px">
+              ${esc((it.created_at || '').slice(0, 16).replace('T', ' '))}
+              ${it.reason ? ' · ' + esc(it.reason) : ''}
+            </div>
+          </div>
+          <span style="font-size:12px;padding:2px 8px;border-radius:20px;${
+            it.status === 'rewarded' ? 'background:var(--green-l);color:var(--green-d)' :
+            it.status === 'pending' ? 'background:var(--orange-l);color:#8A4A14' :
+            'background:var(--bg);color:var(--ink-3)'}">${
+            it.status === 'rewarded' ? '已发放' : it.status === 'pending' ? '待活跃' : '未计入'}</span>
+        </div>`).join('')}
+    </div>` : '<div class="empty">还没有人通过你的邀请加入</div>'}`;
+}
+
+function copyInvite() {
+  const url = location.origin + location.pathname + '?invite=' + ($('#inviteCode').textContent || '').trim();
+  const done = () => toast('邀请链接已复制', 'ok');
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(url).then(done, () => toast(url, 'ok'));
+  } else {
+    // 非 HTTPS 或老浏览器：clipboard API 不可用，退回选中+提示手动复制
+    toast('请手动复制地址栏链接：' + url, 'ok');
+  }
+}
+
+async function submitInvite() {
+  const inp = $('#inviteFill');
+  const code = (inp.value || '').trim();
+  if (!code) { toast('请输入邀请码', 'err'); return; }
+  try {
+    await api('/api/invite/bind', {method:'POST', body: JSON.stringify({code: code, device: deviceId()})});
+    toast('邀请码已生效', 'ok');
+    loadInvite();
   } catch (e) { toast(e.message, 'err'); }
 }
 
@@ -1748,7 +1894,7 @@ async function boot() {
 
   if (TOKEN && API_OK) {
     try {
-      const d = await api('/api/auth/me');
+      const d = await api('/api/auth/me?device=' + encodeURIComponent(deviceId()));
       ME = d.user;
     } catch (e) { TOKEN = ''; localStorage.removeItem('rv_token'); }
   }
@@ -1760,11 +1906,22 @@ async function boot() {
     $('#tip').innerHTML = '当前为演示模式（后端未启动）· 点击「添加营地」需先启动后端服务';
   }
 
+  // 从邀请链接进来：先把邀请码存下来，他领密钥时自动带上
+  // （也可能隔天才领，所以放 localStorage 而不是只在内存里留着）
+  const _inv = new URLSearchParams(location.search).get('invite');
+  if (_inv) {
+    PENDING_INVITE = _inv.trim().toUpperCase().slice(0, 12);
+    try { localStorage.setItem('rv_invite', PENDING_INVITE); } catch (e) {}
+  } else {
+    try { PENDING_INVITE = localStorage.getItem('rv_invite') || ''; } catch (e) {}
+  }
+
   // URL hash 直达：/#login、/#member、/#key、/#spot-12 方便分享入口和调试
   const h = location.hash.replace('#', '');
   if (h === 'login') setTimeout(openLogin, 200);
   else if (h === 'member') setTimeout(openMember, 200);
   else if (h === 'key') setTimeout(issueKey, 200);
+  else if (h === 'invite') setTimeout(() => { TOKEN ? openMember() : issueKey(); }, 200);
   else if (h.startsWith('spot-')) {
     const sid = parseInt(h.slice(5), 10);
     if (sid) setTimeout(() => openSpot(sid), 400);

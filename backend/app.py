@@ -27,15 +27,16 @@ import common
 import config
 import db
 import images
+import invite
 import maintenance
 import notify
 import ratelimit
 import tileproxy
 from common import (FACILITY_KEYS, MANUAL_POINT_REASONS, PLANS, POINT_EXCHANGE,
                     POINT_RULES, SPOT_TYPES, TOKEN_TTL, add_days, client_ip,
-                    current_user, grant_daily_login, issue_token, mask,
-                    normalize_images, require_admin, require_user, serialize_spot,
-                    unique_user_no, user_public)
+                    current_user, exchange_label, grant_daily_login, issue_token,
+                    mask, normalize_images, require_admin, require_user,
+                    serialize_spot, unique_user_no, user_public)
 from geo import haversine_m, wgs84_to_gcj02
 from logsetup import access as access_log
 from logsetup import log
@@ -163,6 +164,13 @@ class RegisterIn(BaseModel):
     username: str = Field(min_length=3, max_length=24)
     password: str = Field(min_length=6, max_length=64)
     nickname: str = Field(default="", max_length=24)
+    invite: str = Field(default="", max_length=16)   # 邀请码，选填
+    device: str = Field(default="", max_length=64)   # 设备指纹，判定"是不是同一台电脑"
+
+
+class InviteBindIn(BaseModel):
+    code: str = Field(min_length=4, max_length=16)
+    device: str = Field(default="", max_length=64)
 
 
 class LoginIn(BaseModel):
@@ -229,9 +237,14 @@ def register(body: RegisterIn, request: Request):
              nick, db.now_iso()),
         )
         uid = cur.lastrowid
+        ip = client_ip(request)
+        # 身份标记要在 bind 之前：邀请判重比的就是"注册时的 IP 和设备"
+        invite.register_identity(conn, uid, ip, body.device)
+        ir = invite.bind(conn, uid, body.invite, ip, body.device)
         token = issue_token(conn, uid)
         db.audit(conn, uid, "register", f"user:{uid}")
-        return {"token": token, "user": user_public(conn, uid)}
+        return {"token": token, "user": user_public(conn, uid),
+                "invite_status": ir["status"], "invite_message": ir["reason"]}
 
 
 @app.get("/api/captcha")
@@ -250,7 +263,9 @@ def get_captcha():
 
 @app.post("/api/auth/key/issue")
 def issue_key(request: Request, nickname: str = Query(default="", max_length=24),
-              captcha_id: str = Query(default=""), captcha_code: str = Query(default="")):
+              captcha_id: str = Query(default=""), captcha_code: str = Query(default=""),
+              invite_code: str = Query(default="", max_length=16),
+              device: str = Query(default="", max_length=64)):
     """免费领取密钥 —— 即"注册"。
 
     关键设计：
@@ -260,9 +275,21 @@ def issue_key(request: Request, nickname: str = Query(default="", max_length=24)
       4. **必须过验证码**：这是全站唯一一个"什么都不用提供就能拿走东西"的
          接口，不限的话一个循环就能刷出几万个账号，把积分、审核队列、
          数据库全冲垮。IP 限流只能挡住最粗糙的那一种。
+      5. invite_code/device 是邀请识别用的。注意：邀请码填错**不影响注册**——
+         人家来注册是主流程，不能因为朋友把 O 抄成 0 就让人家连号都开不了。
+         （参数名刻意叫 invite_code 而不是 invite：后者会把上面的 invite 模块
+           在这个函数里整个遮蔽掉，报出来的错是
+           'str' object has no attribute 'register_identity'，很难一眼看出原因。）
     """
     # 这是全站最容易被人写脚本刷的接口：不限制的话几千个账号几分钟就出来了
-    ratelimit.rule("issue_key", client_ip(request), "领取太频繁")
+    ip = client_ip(request)
+    ratelimit.rule("issue_key", ip, "领取太频繁")
+    # 天级上限：瞬时限流拦不住"每隔十分钟慢慢领"，而免费额度是每人每天 3 条，
+    # 攒出几十个账号就等于永久会员。这条线必须卡住。
+    ratelimit.rule("issue_key_ip_day", ip, "今天新领的密钥太多了")
+    if device:
+        ratelimit.rule("issue_key_dev_day", db.hash_device(device),
+                       "这台设备今天新领的密钥太多了")
     with db.get_conn() as conn:
         if captcha.enabled():
             captcha.verify(conn, captcha_id, captcha_code)
@@ -281,16 +308,26 @@ def issue_key(request: Request, nickname: str = Query(default="", max_length=24)
             (unique_user_no(conn), kh, db.key_preview(key), nick, db.now_iso()),
         )
         uid = cur.lastrowid
+        # 身份标记必须在 bind 之前：邀请判重比的就是"注册那一刻的 IP 和设备"
+        invite.register_identity(conn, uid, ip, device)
+        ir = invite.bind(conn, uid, invite_code, ip, device)
         token = issue_token(conn, uid)
         db.audit(conn, uid, "issue_key", f"user:{uid}")
         notify.notify(conn, uid, "system", "欢迎加入",
                       "你的密钥是本平台唯一的登录凭证，请立即保存。"
                       "密钥不可找回，丢失后只能重新领取一个。", "welcome")
+        warning = "密钥是您唯一的身份凭证，请立即保存。"
+        if ir["status"] == "pending":
+            warning = f"邀请生效了：等对方活跃起来，你会收到 {config.INVITE_REWARD} 积分。"
+        elif ir["status"] == "rejected":
+            warning = f"邀请码未生效：{ir['reason']}。"
         return {
             "secret_key": db.format_key(key),   # 明文，仅此一次
             "token": token,
             "user": user_public(conn, uid),
-            "warning": "密钥是您唯一的身份凭证，请立即保存。建议绑定手机号，丢失后可用手机号找回。",
+            "invite_status": ir["status"],
+            "invite_message": ir["reason"],
+            "warning": warning,
         }
 
 
@@ -377,7 +414,12 @@ def demote_admin(user_no: str = Query(..., description="要降权的管理员编
 
 @app.post("/api/auth/key/rotate")
 def rotate_key(user=Depends(current_user)):
-    """更换密钥。换发后旧密钥立即失效，所有会话清空。"""
+    """更换密钥。换发后旧密钥立即失效，所有会话清空。
+
+    注意这里只改 secret_key_hash/key_preview，**不创建新账号**：
+    免费额度是按账号 id 记的（app._user_key），所以换发不会把"今天还剩几次"
+    刷回初始值——换发是给"怀疑泄露了"的场景用的，顺手送一次额度就不合理了。
+    """
     if not user:
         raise HTTPException(401, "请先登录")
     with db.get_conn() as conn:
@@ -503,11 +545,13 @@ def login(body: LoginIn, request: Request):
 
 @app.get("/api/auth/me")
 def me(request: Request, user=Depends(current_user)):
+    ip = client_ip(request)
+    device = _device_of(request)
     if not user:
-        return {"user": None, "quota": _quota_public(None, client_ip(request))}
+        return {"user": None, "quota": _quota_public(None, ip, device)}
     with db.get_conn() as conn:
         return {"user": user_public(conn, user["id"]),
-                "quota": _quota_public(user, client_ip(request))}
+                "quota": _quota_public(user, ip, device)}
 
 
 @app.post("/api/auth/logout")
@@ -521,11 +565,31 @@ def logout(authorization: str = Header(default="")):
 # ---------------------------------------------------------------- 免费额度
 
 def _user_key(user, ip: str = "") -> str:
-    """额度归属：登录用户按 uid，匿名按 IP。
+    """主额度桶的归属：登录用户按 **账号 id**，匿名按 IP。
 
-    匿名不能共用一个桶——否则第一个访客看完 8 条，后面所有人都被挡住。
+    按 uid 而不是按密钥/token，是刻意的：换发密钥走的是同一行的 UPDATE，
+    账号没变、额度就不变——换发是用来处理"怀疑泄露"的，不该顺带把
+    免费额度刷新一遍。
+
+    匿名不能共用一个桶——否则第一个访客看完 3 条，后面所有人都被挡住。
     """
     return f"u{user['id']}" if user else f"ip:{ip or 'unknown'}"
+
+
+def _extra_keys(ip: str, device: str) -> list[tuple[str, int, str]]:
+    """跨账号的两层兜底桶（只对**已登录**用户生效，见 _charge_detail_quota）。
+
+    为什么只给登录用户：匿名本来就是按 IP 记的（ip: 前缀），再加一层网络桶
+    等于把匿名额度从 3 抬到 30，那才是真的送福利。这两个桶要防的是
+    "自觉地反复开新号"——这类人一定有账号，正好落在覆盖范围内。
+    """
+    out = []
+    if ip:
+        out.append((f"nw:{ip}", config.FREE_NETWORK_QUOTA, "同一个网络今天看得太多了"))
+    if device:
+        out.append((f"dv:{db.hash_device(device)}", config.FREE_DEVICE_QUOTA,
+                    "同一台设备今天看得太多了"))
+    return out
 
 
 def _detail_used(conn, user_key: str) -> int:
@@ -535,21 +599,37 @@ def _detail_used(conn, user_key: str) -> int:
         (user_key, today)).fetchone()["c"]
 
 
-def _quota_public(user, ip: str = "") -> dict:
+def _quota_public(user, ip: str = "", device: str = "") -> dict:
     """给前端展示的额度信息。会员返回不限。"""
     if user and (user["is_admin"] or db.is_member(user)):
         return {"limit": -1, "used": 0, "left": -1, "member": True}
     with db.get_conn() as conn:
         used = _detail_used(conn, _user_key(user, ip))
+        used_ext = [{"cap": cap, "used": _detail_used(conn, k), "why": why}
+                    for k, cap, why in (_extra_keys(ip, device) if user else [])]
     return {"limit": FREE_DAILY_DETAIL_QUOTA, "used": used,
-            "left": max(0, FREE_DAILY_DETAIL_QUOTA - used), "member": False}
+            "left": max(0, FREE_DAILY_DETAIL_QUOTA - used), "member": False,
+            # 已经顶到兜底桶的那一个——前端要提示"再看就得换会员"，否则用户
+            # 会一脸懵地看着"我明明还有 3 次额度"却打不开
+            "blocked_by": next((e for e in used_ext if e["used"] >= e["cap"]), None)}
 
 
-def _charge_detail_quota(conn, user, spot_id: int, ip: str = "") -> dict:
+def _device_of(request: Request) -> str:
+    """从请求里取设备标识。缺失不影响主流程，只是少一层兜底。"""
+    return request.query_params.get("device", "")[:64]
+
+
+def _charge_detail_quota(conn, user, spot_id: int, ip: str = "",
+                         device: str = "") -> dict:
     """扣一次免费额度。同一营地当天只扣一次（反复刷新不惩罚）。
 
-    返回 {"ok": True} 或 {"ok": False, "used": n, "limit": n}。
-    会员与作者本人不扣。
+    三层限额同时校验，会员与作者本人不扣：
+      账号桶   每人每天 3 条（main）
+      设备桶   同一台电脑跨账号的总量
+      网络桶   同一个出口 IP 跨账号的总量
+    后两层只对登录用户生效，用来堵"换个新密钥又能看 3 条"。
+
+    返回 {"ok": True} 或 {"ok": False, "used": n, "limit": n, "why": 原因}。
     """
     if user and (user["is_admin"] or db.is_member(user)):
         return {"ok": True}
@@ -560,13 +640,35 @@ def _charge_detail_quota(conn, user, spot_id: int, ip: str = "") -> dict:
         (key, spot_id, today)).fetchone()
     if existed:
         return {"ok": True}
+
     used = _detail_used(conn, key)
     if used >= FREE_DAILY_DETAIL_QUOTA:
-        return {"ok": False, "used": used, "limit": FREE_DAILY_DETAIL_QUOTA}
+        return {"ok": False, "used": used, "limit": FREE_DAILY_DETAIL_QUOTA,
+                "why": "今日免费查看额度已用完"}
+
+    # 兜底桶：主额度还没用完，但同一台设备/同一个网络累积过量也要拦住
+    for bkey, cap, why in (_extra_keys(ip, device) if user else []):
+        b_used = _detail_used(conn, bkey)
+        if b_used >= cap:
+            log.warning("跨账号额度命中 key=%s used=%d/%d user=%s",
+                        bkey[:6], b_used, cap, user["id"] if user else "-")
+            return {"ok": False, "used": FREE_DAILY_DETAIL_QUOTA,
+                    "limit": FREE_DAILY_DETAIL_QUOTA, "why": why}
+
     conn.execute(
         "INSERT INTO detail_views(user_key, spot_id, day, created_at) VALUES(?,?,?,?)",
         (key, spot_id, today, db.now_iso()))
-    return {"ok": True, "used": used + 1, "left": FREE_DAILY_DETAIL_QUOTA - used - 1}
+    # 兜底桶按 use as well：每个账号消耗都记进它所在的网络/设备，多个号
+    # 才会累加到上限而不是各算各的。这里的 spot_id 用负号做标记，避免
+    # 与 user_key 上的 (user_key, spot_id, day) 唯一索引冲突。
+    for bkey, cap, why in (_extra_keys(ip, device) if user else []):
+        # IGNORE：同一个营地在这一家人/这一台电脑上只算一次，
+        # 语义等价于"今天从这个网络打开过几个不同的营地详情"
+        conn.execute(
+            "INSERT OR IGNORE INTO detail_views(user_key, spot_id, day, created_at)"
+            " VALUES(?,?,?,?)", (bkey, -spot_id, today, db.now_iso()))
+    return {"ok": True, "used": used + 1,
+            "left": FREE_DAILY_DETAIL_QUOTA - used - 1}
 
 
 # ---------------------------------------------------------------- 营地标记
@@ -669,10 +771,14 @@ def spot_detail(spot_id: int, request: Request, user=Depends(current_user)):
 
         # 免费额度：这是会员转化最核心的一处门禁，必须真的执行
         if not (user and (user["is_admin"] or db.is_member(user))):
-            quota = _charge_detail_quota(conn, user, spot_id, client_ip(request))
+            quota = _charge_detail_quota(conn, user, spot_id,
+                                         client_ip(request), _device_of(request))
             if not quota.get("ok"):
+                # 三种原因（本人额度用尽 / 同设备过多 / 同网络过多）都带"额度"二字，
+                # 前端靠这个关键词识别 402 并弹出会员引导，不要改掉
                 raise HTTPException(
-                    402, f"今日免费查看额度已用完（{quota['used']}/{quota['limit']}），"
+                    402, f"{quota.get('why', '今日免费查看额度已用完')}"
+                         f"（{quota['used']}/{quota['limit']}），"
                          "开通会员可不限次查看全部营地信息")
 
         ratings = conn.execute(
@@ -807,6 +913,8 @@ def create_spot(body: SpotIn, request: Request, user=Depends(require_user)):
         for i in imgs[:MAX_IMAGES_PER_SPOT]:
             conn.execute("UPDATE uploads SET spot_id=? WHERE path=?", (sid, i["url"]))
         db.audit(conn, user["id"], "spot_create", f"spot:{sid}", body.name)
+        # 提交营地也算"活跃"——够格让邀请人拿这一笔奖励
+        invite.settle(conn, user["id"])
         notify.notify(conn, user["id"], "system", "提交已收到",
                       f"「{body.name}」已提交，审核通过后将获得 "
                       f"{POINT_RULES['spot_approved']} 积分。", f"spot:{sid}")
@@ -892,7 +1000,8 @@ def my_points(user=Depends(require_user)):
         return {
             "points": user["points"],
             "rules": POINT_RULES,
-            "exchange": [{"points": k, "days": v} for k, v in sorted(POINT_EXCHANGE.items())],
+            "exchange": [{"points": k, "days": v, "label": exchange_label(k, v)}
+                         for k, v in sorted(POINT_EXCHANGE.items())],
             "logs": [db.row_to_dict(r) for r in logs],
         }
 
@@ -909,11 +1018,57 @@ def exchange_membership(points: int, user=Depends(require_user)):
         base = user["expire_at"] if db.is_member(user) else db.now_iso()
         new_exp = add_days(base, days)
         conn.execute("UPDATE users SET level=1, expire_at=? WHERE id=?", (new_exp, user["id"]))
-        db.audit(conn, user["id"], "exchange_membership", f"user:{user['id']}", f"{points}分/{days}天")
+        db.audit(conn, user["id"], "exchange_membership", f"user:{user['id']}",
+                 f"{points}分/{days}天")
         notify.notify(conn, user["id"], "points", "积分兑换成功",
-                      f"已用 {points} 积分兑换 {days} 天会员，有效期至 {new_exp[:10]}。")
+                      f"已用 {points} 积分兑换 {exchange_label(points, days)}"
+                      f"会员（{days} 天），有效期至 {new_exp[:10]}。")
         return {"ok": True, "expire_at": new_exp, "days": days,
+                "label": exchange_label(points, days),
                 "user": user_public(conn, user["id"])}
+
+
+# ---------------------------------------------------------------- 邀请
+
+def _invite_base_url(request: Request) -> str:
+    """拼出对外可访问的站点根地址，用于生成邀请链接。
+
+    必须优先看 X-Forwarded-*：本机跑的时候是 http://127.0.0.1:8000，
+    真上线了是 https://域名，写死任何一个都会生成打不开的邀请链接。
+    """
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host", "")
+    if not host:
+        return ""
+    scheme = request.headers.get("x-forwarded-proto") or request.url.scheme
+    return f"{scheme}://{host}".rstrip("/")
+
+
+@app.get("/api/invite/mine")
+def my_invite(request: Request, user=Depends(require_user)):
+    """我的邀请：邀请码、链接、以及每一位的当前状态。
+
+    状态为什么要展示给用户看：积分不是实时到账，"我发给人了怎么没加分"
+    是最容易引发投诉的问题。把"已邀请，待对方回访 2 天"摆出来，
+    比在公告里写一段规则有效得多。
+    """
+    with db.get_conn() as conn:
+        return invite.my_summary(conn, user["id"], _invite_base_url(request))
+
+
+@app.post("/api/invite/bind")
+def bind_invite(body: InviteBindIn, request: Request, user=Depends(require_user)):
+    """注册之后补填邀请码。
+
+    限制：注册超过 N 天就不再受理。没有这条限制，老账号可以无限期"认领"
+    任意邀请人，邀请码就变成了可以事后倒卖的东西。
+    """
+    ratelimit.rule("invite_bind", str(user["id"]), "尝试太频繁")
+    with db.get_conn() as conn:
+        r = invite.bind_later(conn, user["id"], body.code,
+                              client_ip(request), body.device)
+    if r["status"] == "rejected":
+        raise HTTPException(400, r["reason"])
+    return {"ok": True, **r}
 
 
 @app.get("/api/plans")
@@ -1402,6 +1557,10 @@ def meta():
             # 昵称是唯一且自助可改的，规则下发给前端保证两边校验一致
             "nickname_min": common.NICKNAME_MIN, "nickname_max": common.NICKNAME_MAX,
             "free_quota": FREE_DAILY_DETAIL_QUOTA,
+            # 邀请规则下发给前端：门槛变了不用改两处代码
+            "invite_reward": config.INVITE_REWARD,
+            "invite_need_days": config.INVITE_ACTIVATE_DAYS,
+            "invite_bind_days": config.INVITE_BIND_WINDOW // 86400,
             "dev": config.DEV, "demo_keys": demo_keys,
             # 非空 = 前端走自建瓦片代理，而不是让浏览器直连源站
             "tile_proxy": config.TILE_PROXY}

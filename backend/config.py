@@ -85,6 +85,23 @@ ALLOW_MOCK_PAY = env_bool("RVCAMP_ALLOW_MOCK_PAY", DEV)
 # 免费用户每天可查看的营地详情条数（此前只写在接口返回里，从未真正执行）
 FREE_DAILY_DETAIL_QUOTA = env_int("RVCAMP_FREE_QUOTA", 3)
 
+# -------- 防"多开小号刷免费额度"的兜底桶 --------
+# 单账号额度是按 **账号 id** 记的，所以"换发密钥"本身不会把额度清零
+# （换发是同一行 UPDATE，uid 没变）。但"再领一个密钥"等于新建一个账号，
+# 三个新账号就把一天额度翻三倍——这才是真正的漏洞。
+#
+# 光靠账号 id 挡不住"无限新建"，所以再加两层**跨账号**的桶，按"同一台电脑"
+# 和"同一个出口网络"统计当天所有账号合起来的查看次数：
+#   账号桶   3 次/天          —— 主额度，对老用户完全没变
+#   设备桶   12 次/天（默认）  —— 一台电脑上开几个号也只养得出 12 次
+#   网络桶   30 次/天（默认）  —— 同一个 WiFi/公司网/(少数情况)NAT 的总量
+# 会员不受任何一层限制。默认值留足余量，避免一家人共用一个 WiFi 被误伤；
+# 真的被薅了就把这两个数往下调，不需要改代码。
+FREE_DEVICE_QUOTA = env_int("RVCAMP_FREE_DEVICE_QUOTA",
+                            FREE_DAILY_DETAIL_QUOTA * 4)
+FREE_NETWORK_QUOTA = env_int("RVCAMP_FREE_NETWORK_QUOTA",
+                             FREE_DAILY_DETAIL_QUOTA * 10)
+
 # 瓦片代理前缀。默认 "/tiles" = 走后端自建代理（backend/tileproxy.py）：
 #   统一出口（源站只看到我们一台机器）+ 磁盘缓存（每块瓦片只回源一次）+ 防盗链。
 # 全部免费、不需要任何 Key。置空才退回"浏览器直连源站"，一般不该这么配——
@@ -111,6 +128,35 @@ JPEG_QUALITY = env_int("RVCAMP_JPEG_QUALITY", 82)
 NICKNAME_MIN = env_int("RVCAMP_NICKNAME_MIN", 2)
 NICKNAME_MAX = env_int("RVCAMP_NICKNAME_MAX", 16)
 
+# ---------------------------------------------------------------- 邀请与铲分
+
+# 邀请一个有效用户给邀请人的积分。注意这**不是数字**：积分能换会员天数
+# （90 天起），所以它是可以直接换成钱的，判定宁可偏紧不可偏松。
+INVITE_REWARD = env_int("RVCAMP_INVITE_REWARD", 20)
+
+# 反作弊阈值。设计逻辑见 invite.py 顶部注释。
+INVITE_CODE_LEN = env_int("RVCAMP_INVITE_CODE_LEN", 8)
+
+# 同一网段（IPv4 取 /24，IPv6 取 /48）在这个时间窗内最多算几个有效邀请。
+# 挡的是"同一个网吧/机房/手机卡池批量注册"：正常一个网段里有几个人同时注册
+# 很常见，但一天跳出十几个来自同一出口的"新用户"就只可能是刷的。
+INVITE_NET_WINDOW = env_int("RVCAMP_INVITE_NET_WINDOW", 86400)
+INVITE_NET_MAX = env_int("RVCAMP_INVITE_NET_MAX", 5)
+
+# 单个邀请人的上限。防的是"一个人建一堆互相关联的账号"，
+# 而不是限制真正愿意推广的人——正常用户拉不到这个数。
+INVITE_DAILY_CAP = env_int("RVCAMP_INVITE_DAILY_CAP", 20)
+INVITE_TOTAL_CAP = env_int("RVCAMP_INVITE_TOTAL_CAP", 500)
+
+# 注册后多久之内还能补填邀请码（超过就不再算，避免"事后认领"老账号）
+INVITE_BIND_WINDOW = env_int("RVCAMP_INVITE_BIND_WINDOW", 86400 * 7)
+
+# 发放门槛：光注册一个号不给分。被邀请人必须"像个真人"——
+# 回访满 N 天或有实际产出（提交营地）。同网络/同设备的高风险关系要两条都满足。
+INVITE_ACTIVATE_DAYS = env_int("RVCAMP_INVITE_ACTIVATE_DAYS", 2)
+INVITE_ACTIVATE_SPOTS = env_int("RVCAMP_INVITE_ACTIVATE_SPOTS", 1)
+INVITE_RISK_ACTIVATE_DAYS = env_int("RVCAMP_INVITE_RISK_ACTIVATE_DAYS", 3)
+
 # ---------------------------------------------------------------- 限流规则
 # (窗口秒数, 窗口内允许次数)
 RATE_RULES = {
@@ -123,6 +169,11 @@ RATE_RULES = {
     "phone_login":  (600, 10),    # 手机号登录
     "recover":      (86400, 3),   # 密钥找回：每天 3 次
     "rename":       (3600, 5),    # 改昵称：1 小时 5 次（别让用户反复占名字）
+    "invite_bind":  (3600, 10),   # 补填邀请码：1 小时 10 次（别让人拿去穷举码）
+    # 领号的**天级**上限：前面的 10 分钟 5 个只拦瞬时脚本，
+    # 一整天慢慢领还是能攒出几十个账号，靠这两条按 IP / 设备收口。
+    "issue_key_ip_day": (86400, 3),
+    "issue_key_dev_day": (86400, 2),
 }
 # 全局兜底：单 IP 所有写请求（POST/PATCH/DELETE）上限
 RATE_WRITE_GLOBAL = (60, 120)

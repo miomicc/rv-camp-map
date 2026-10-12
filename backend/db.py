@@ -48,7 +48,13 @@ CREATE TABLE IF NOT EXISTS users (
     expire_at       TEXT,                          -- 赞助会员到期时间 ISO8601
     is_admin        INTEGER NOT NULL DEFAULT 0,
     is_banned       INTEGER NOT NULL DEFAULT 0,
-    created_at      TEXT    NOT NULL
+    created_at      TEXT    NOT NULL,
+    -- 邀请：invite_code 对外分享，invited_by 记录来源，reg_ip/reg_fp 用于判重
+    invite_code     TEXT,                           -- 邀请码（唯一，首次读时生成）
+    invited_by      INTEGER,                        -- 邀请人的用户 id
+    invite_at       TEXT,                           -- 绑定邀请关系的时间
+    reg_ip          TEXT,                           -- 注册时的出口 IP（判定是否同一网络）
+    reg_fp          TEXT                            -- 注册时的设备指纹哈希（判定是否同一台电脑）
 );
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 
@@ -213,6 +219,30 @@ CREATE TABLE IF NOT EXISTS captchas (
     tries      INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL
 );
+
+-- 邀请关系。一个人只能占一行（invitee_id UNIQUE）——因为奖励只发一次，
+-- 不允许"同一个人被反复算"。
+-- status: pending=已建立待发放 / rewarded=已发分 / rejected=判定为作弊或未达标放弃
+CREATE TABLE IF NOT EXISTS invites (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    inviter_id  INTEGER NOT NULL,
+    invitee_id  INTEGER NOT NULL UNIQUE,
+    code        TEXT    NOT NULL DEFAULT '',
+    status      TEXT    NOT NULL DEFAULT 'pending',
+    reason      TEXT    NOT NULL DEFAULT '',
+    same_ip     INTEGER NOT NULL DEFAULT 0,     -- 与邀请人同网络（弱信号）
+    same_device INTEGER NOT NULL DEFAULT 0,     -- 与邀请人同设备（弱信号）
+    ip          TEXT    NOT NULL DEFAULT '',
+    network     TEXT    NOT NULL DEFAULT '',    -- IP 段（v4 /24、v6 /48）
+    device_fp   TEXT    NOT NULL DEFAULT '',
+    created_at  TEXT    NOT NULL,
+    rewarded_at TEXT,
+    FOREIGN KEY (inviter_id) REFERENCES users(id),
+    FOREIGN KEY (invitee_id) REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS idx_invites_inviter ON invites(inviter_id);
+CREATE INDEX IF NOT EXISTS idx_invites_status ON invites(status);
+CREATE INDEX IF NOT EXISTS idx_invites_network ON invites(network);
 """
 
 
@@ -321,6 +351,19 @@ def hash_code(phone: str, code: str, purpose: str) -> str:
     return hashlib.sha256((PEPPER + "|" + phone + "|" + code + "|" + purpose).encode()).hexdigest()
 
 
+def hash_device(fp: str) -> str:
+    """设备指纹哈希（邀请判重用）。
+
+    存的是**不可逆摘要**而不是前端传来的原始随机串：原始串一旦随行共存，
+    谁拿到库就能反推出"哪台设备是哪个人"，那等于给用户建了设备档案。
+    同理这也决定了它只能用来回答"这两次是同一台电脑吗"，不能用来跨站追踪。
+    """
+    raw = (fp or "").strip()[:64]
+    if not raw:
+        return ""
+    return hashlib.sha256((PEPPER + "|dev|" + raw).encode()).hexdigest()[:32]
+
+
 def key_preview(key: str) -> str:
     """密钥末 4 位，用于用户在界面上核对"这是我的密钥"。
 
@@ -387,6 +430,13 @@ MIGRATIONS = [
     ("users", "phone", "TEXT"),
     ("users", "phone_verified_at", "TEXT"),
     ("users", "email", "TEXT"),
+    # 邀请功能：老用户补 invite_code 的事在 init_db() 里统一做，
+    # 这里只负责把列补出来，否则后面 INSERT 会因为不存在该列而报错。
+    ("users", "invite_code", "TEXT"),
+    ("users", "invited_by", "INTEGER"),
+    ("users", "invite_at", "TEXT"),
+    ("users", "reg_ip", "TEXT"),
+    ("users", "reg_fp", "TEXT"),
 ]
 
 
@@ -518,6 +568,10 @@ def _ensure_unique_indexes(conn) -> None:
     conn.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_nickname ON users(nickname COLLATE NOCASE)"
         " WHERE nickname IS NOT NULL AND nickname != ''")
+    # 邀请码同理：应用层生成时查过重，这里再兜一道防止并发抢号。
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_invitecode ON users(invite_code)"
+        " WHERE invite_code IS NOT NULL AND invite_code != ''")
 
 
 def init_db() -> None:

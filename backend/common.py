@@ -13,6 +13,7 @@ from fastapi import Depends, Header, HTTPException, Request
 
 import config
 import db
+import invite
 from geo import gcj02_to_bd09, gcj02_to_wgs84
 from logsetup import log
 
@@ -20,16 +21,33 @@ from logsetup import log
 
 # 积分规则：集中定义，方便运营调参而不用改代码
 POINT_RULES = {
-    "spot_approved": 50,      # 提交的营地上线
+    "spot_approved": 100,     # 提交的营地上线（营地是最贵的产出，值这个价）
     "spot_rejected": 0,       # 被驳回不扣分（避免误伤新人）
     "rate_spot": 3,           # 评价他人营地
     "spot_good_rated": 5,     # 自己的营地被评 4 星以上
     "daily_login": 2,         # 每日首次登录
+    "invite_reward": 20,      # 邀请一个真人，且对方达标之后（见 invite.py）
     "spot_stale_reported": -30,  # 提交的营地被多人举报失效
 }
 
-# 积分兑换会员时长：积分数 -> 天数
-POINT_EXCHANGE = {500: 30, 2000: 180, 6000: 730}
+# 积分兑换会员时长：积分数 -> 天数。
+# 只有两档，且"买多送多"——300 分换 90 天（3 个月），600 分换 180 天（6 个月）。
+# 之前那套 500分=30天 / 2000分=180天 / 6000分=730天 是早年随手定的，
+# 换算下来 500 分才 30 天、2000 分才半年，正常用户一辈子够不着，
+# 等于没有兑换功能。现在的档位是有意让用户"够得着"的。
+POINT_EXCHANGE = {300: 90, 600: 180}
+
+# 兑换档位的中文说明。天数自己算容易把 90 天算成"3 个月还是 90 天"，
+# 统一在这里定义，前端/通知/后台三处读同一份。
+POINT_EXCHANGE_LABEL = {300: "3 个月", 600: "6 个月"}
+
+
+def exchange_label(points: int, days: int) -> str:
+    """把天数说成人话（3 个月），900 天以上说年。"""
+    label = POINT_EXCHANGE_LABEL.get(points)
+    if label:
+        return label
+    return "终身" if days >= 36500 else f"{days} 天"
 
 # 管理员手动调整积分的事由白名单。
 # 积分能换会员天数，等于间接影响收入，所以不允许"随便给个理由就调"——
@@ -136,6 +154,14 @@ def user_public(conn, uid: int) -> dict:
     d["phone_masked"] = mask_phone(row["phone"]) if row["phone"] else ""
     d.pop("phone", None)
     d.pop("is_banned", None)
+    # 邀请功能加的这几列属于内部判定数据：注册 IP 和设备指纹是个人隐私信息
+    # （泄露了相当于告诉别人"这个账号从哪个网络、用哪台电脑注册的"），
+    # 绝不能出接口。invite_code 虽然是自己的，但没必要跟着每个 /api/auth/me
+    # 回传——要分享时走 /api/invite/mine 单独取。
+    d.pop("reg_ip", None)
+    d.pop("reg_fp", None)
+    d.pop("invited_by", None)
+    d.pop("invite_code", None)
     return d
 
 
@@ -200,7 +226,11 @@ def unique_user_no(conn) -> str:
 
 
 def grant_daily_login(conn, uid: int) -> None:
-    """每日首次登录送积分。密钥登录、账号登录、手机号登录共用这一份逻辑。"""
+    """每日首次登录送积分。密钥登录、账号登录、手机号登录共用这一份逻辑。
+
+    顺带做一次邀请结算：判断"被邀请人是不是真的在用"靠的就是回访天数，
+    这里正好是唯一能稳定观察到他今天来了的地方。
+    """
     today = db.now_iso()[:10]
     got = conn.execute(
         "SELECT id FROM point_logs WHERE user_id=? AND reason=? AND created_at LIKE ?",
@@ -208,6 +238,7 @@ def grant_daily_login(conn, uid: int) -> None:
     ).fetchone()
     if not got:
         db.add_points(conn, uid, POINT_RULES["daily_login"], "daily_login")
+    invite.settle(conn, uid)
 
 
 def add_days(iso: str, days: int) -> str:
