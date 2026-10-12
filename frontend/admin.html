@@ -723,7 +723,7 @@ async function renderUsers() {
       <input class="inp" id="userKw" placeholder="搜索昵称 / 用户编号" value="${esc(userKw)}" style="flex:1;min-width:180px;max-width:300px">
       <button class="btn btn-ghost" onclick="doUserSearch()">搜索</button>
       <div style="flex:1"></div>
-      <span style="font-size:12.5px;color:var(--ink-3)">匿名用户也可正常使用，封禁后其登录凭证立即失效</span>
+      <span style="font-size:12.5px;color:var(--ink-3)">每行可改积分、改会员到期、代改昵称；封禁后其登录凭证立即失效</span>
     </div>
     <div class="panel"><div class="panel-b flush" id="userList"><div class="empty">加载中…</div></div></div>`;
 
@@ -742,7 +742,9 @@ async function renderUsers() {
             <td class="mono">${esc(u.user_no || '—')}</td>
             <td><div class="tname">${esc(u.nickname || '未命名')}
                 <a href="javascript:;" onclick="openAdminRename(${u.id})" title="代用户改名"
-                   style="font-size:11.5px;color:var(--green);margin-left:6px;text-decoration:underline">改名</a></div>
+                   style="display:inline-block;padding:1px 9px;border-radius:20px;background:var(--green-l);
+                          border:1px solid var(--green);color:var(--green-d);font-size:11.5px;
+                          font-weight:600;text-decoration:none">改名</a></div>
                 <div class="tsub">密钥末4位 ${esc(u.key_preview || '—')}</div></td>
             <td>
               ${u.is_admin ? '<span class="tag t-gold">管理员</span>' : ''}
@@ -757,8 +759,8 @@ async function renderUsers() {
             <td style="font-size:12.5px;color:var(--ink-3)">${u.expire_at ? esc(u.expire_at.slice(0,10)) : '—'}</td>
             <td><div class="acts">
               ${u.is_admin ? '<span style="color:var(--ink-3);font-size:12.5px">—</span>' : `
-                <button class="btn btn-ghost btn-sm" onclick="openPoints(${u.id})">积分</button>
-                <button class="btn btn-ghost btn-sm" onclick="openMembership(${u.id})">会员</button>
+                <button class="btn btn-primary btn-sm" onclick="openPoints(${u.id})">积分</button>
+                <button class="btn btn-primary btn-sm" onclick="openMembership(${u.id})">会员</button>
                 ${u.is_banned
                   ? `<button class="btn btn-ghost btn-sm" onclick="banUser(${u.id},0,'${esc(u.nickname)}')">解封</button>`
                   : `<button class="btn btn-danger btn-sm" onclick="banUser(${u.id},1,'${esc(u.nickname)}')">封禁</button>`}`}
