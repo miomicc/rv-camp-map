@@ -1716,9 +1716,11 @@ async function boot() {
   } catch (e) {
     API_OK = false;
   }
-  $('#modeChip').innerHTML = API_OK
-    ? `<span class="mode-chip chip-live">● 已连接后端</span>`
-    : `<span class="mode-chip chip-demo">● 演示数据</span>`;
+  // 正常连上后端时什么都不显示（这是默认状态，没必要报喜）；
+  // 只有真的没连上、页面在跑演示数据时，才需要明确提示用户。
+  const chip = $('#modeChip');
+  chip.innerHTML = `<span class="mode-chip chip-demo">● 演示数据</span>`;
+  chip.style.display = API_OK ? 'none' : '';
 
   if (TOKEN && API_OK) {
     try {
