@@ -178,10 +178,23 @@ def _read_cache(up: str, rest: str):
     return data, ctype
 
 
+# 已经确认存在的缓存子目录。瓦片写入是高频操作（一屏几十块），
+# 每块都 mkdir 一遍纯属浪费，且在某些受限环境里 mkdir 要走权限校验、很慢。
+_made_dirs: set = set()
+
+
+def _ensure_dir(d) -> None:
+    if d in _made_dirs:
+        return
+    if not d.is_dir():
+        d.mkdir(parents=True, exist_ok=True)
+    _made_dirs.add(d)
+
+
 def _write_cache(up: str, rest: str, ctype: str, data: bytes):
     body_f, hdr_f = _cache_files(up, rest)
     try:
-        body_f.parent.mkdir(parents=True, exist_ok=True)
+        _ensure_dir(body_f.parent)
         tmp = str(body_f) + ".tmp"
         with open(tmp, "wb") as f:
             f.write(data)

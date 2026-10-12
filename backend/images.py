@@ -65,7 +65,10 @@ def process(raw: bytes) -> dict:
 
     day = time.strftime("%Y%m")
     base = config.UPLOAD_DIR / day
-    (base / "thumb").mkdir(parents=True, exist_ok=True)
+    thumb_base = base / "thumb"
+    # 按月份分目录，一个月只需建一次；每次上传都 mkdir 是白花的开销
+    if not thumb_base.is_dir():
+        thumb_base.mkdir(parents=True, exist_ok=True)
     name = secrets.token_hex(12)
 
     full_path = base / f"{name}.jpg"

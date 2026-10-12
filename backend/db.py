@@ -340,9 +340,28 @@ def format_key(key: str) -> str:
     return "-".join(k[i:i + 4] for i in range(0, len(k), 4))
 
 
+_db_dir_ready = False
+
+
+def _ensure_db_dir() -> None:
+    """确保数据库所在目录存在。
+
+    刻意只做**一次**：这个目录建好之后永远不会消失，没必要每个请求都
+    makedirs 一遍。曾经就因为每次请求都调 makedirs，在某些受限运行环境
+    里每次都要走一遍权限校验，把接口拖到 5 秒才返回，页面看起来像打不开。
+    """
+    global _db_dir_ready
+    if _db_dir_ready:
+        return
+    d = os.path.dirname(DB_PATH)
+    if not os.path.isdir(d):
+        os.makedirs(d, exist_ok=True)
+    _db_dir_ready = True
+
+
 @contextmanager
 def get_conn():
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    _ensure_db_dir()
     conn = sqlite3.connect(DB_PATH, timeout=15)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON")
