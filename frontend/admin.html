@@ -748,11 +748,14 @@ async function renderUsers() {
               ${u.is_member ? '<span class="tag t-green">赞助会员</span>' : '<span class="tag t-gray">免费</span>'}
               ${u.is_banned ? '<span class="tag t-red">已封禁</span>' : ''}
             </td>
-            <td>${u.points}</td>
+            <td><b>${u.points}</b>
+                <div class="tsub"><a href="javascript:;" style="color:var(--green);text-decoration:underline"
+                     onclick="openPointLogs(${u.id},'${esc(u.nickname || '未命名')}')">流水</a></div></td>
             <td>${u.spots_count}</td>
             <td style="font-size:12.5px;color:var(--ink-3)">${u.expire_at ? esc(u.expire_at.slice(0,10)) : '—'}</td>
             <td><div class="acts">
               ${u.is_admin ? '<span style="color:var(--ink-3);font-size:12.5px">—</span>' : `
+                <button class="btn btn-ghost btn-sm" onclick="openPoints(${u.id})">积分</button>
                 <button class="btn btn-ghost btn-sm" onclick="openMembership(${u.id})">会员</button>
                 ${u.is_banned
                   ? `<button class="btn btn-ghost btn-sm" onclick="banUser(${u.id},0,'${esc(u.nickname)}')">解封</button>`
@@ -897,6 +900,146 @@ async function submitMembership() {
     closeModal();
     renderUsers();
   } catch (e) { err.textContent = e.message; err.style.display = 'block'; }
+}
+
+/* ---------------- 手动调整积分 ---------------- */
+// 积分能兑换会员天数（/api/points 里的兑换档位），等于间接影响付费权益，
+// 所以不允许系统自动发：只能由管理员按事由分类手动增减，
+// 每次调整都写 point_logs 流水 + 审计日志 + 给用户发站内信。
+const POINT_REASON_CN = {
+  spot_approved:'营地上线通过审核', rate_spot:'评价他人营地', spot_good_rated:'自己的营地获好评',
+  daily_login:'每日登录', spot_stale_reported:'提交的营地被举报失效',
+  exchange_membership:'兑换会员天数',
+  admin_reward:'管理员奖励', admin_compensate:'管理员补偿', admin_penalty:'违规扣除',
+  admin_review_fix:'数据补录/纠正', admin_other:'管理员手动调整',
+};
+
+let _ptUid = null;
+
+async function openPoints(uid) {
+  const u = (window._userItems || []).find(x => x.id === uid);
+  if (!u) { toast('用户数据已过期，请刷新列表', 'err'); return; }
+  _ptUid = uid;
+
+  // 事由白名单由后端下发，前后端改一处就够
+  let reasons = null;
+  try { reasons = (await api('/api/meta')).manual_point_reasons; } catch (e) { /* 用兜底字典 */ }
+  if (!reasons) reasons = {reward:'活动奖励', compensate:'投诉/故障补偿', penalty:'违规扣除',
+                           review_fix:'数据补录/纠正', other:'其他'};
+
+  openModal(`
+    <div class="modal-head"><h2>调整积分</h2><button class="x" onclick="closeModal()">×</button></div>
+    <div style="padding:20px 22px">
+      <div style="font-size:12.5px;color:var(--ink-3);line-height:1.9;margin-bottom:16px">
+        ${esc(u.nickname || '未命名')} · 编号 ${esc(u.user_no || '—')}<br>
+        当前积分：<b style="color:var(--ink);font-size:14px" id="ptNow">${u.points}</b>
+      </div>
+      <div class="fld">
+        <label>调整方向</label>
+        <div style="display:flex;gap:18px;margin-top:7px">
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+            <input type="radio" name="ptDir" value="1" checked onchange="ptCalc()"
+                   style="width:auto;height:auto;margin:0"> 增加</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+            <input type="radio" name="ptDir" value="-1" onchange="ptCalc()"
+                   style="width:auto;height:auto;margin:0"> 扣减</label>
+        </div>
+      </div>
+      <div class="fld">
+        <label>积分数量</label>
+        <input id="ptAmt" type="number" min="1" step="1" placeholder="输入正整数" oninput="ptCalc()">
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px">
+        <button class="btn btn-ghost btn-sm" onclick="ptQuick(50)">+50</button>
+        <button class="btn btn-ghost btn-sm" onclick="ptQuick(100)">+100</button>
+        <button class="btn btn-ghost btn-sm" onclick="ptQuick(500)">+500</button>
+        <button class="btn btn-ghost btn-sm" onclick="ptQuick(-50)">-50</button>
+        <button class="btn btn-ghost btn-sm" onclick="ptQuick(-100)">-100</button>
+        <button class="btn btn-ghost btn-sm" onclick="ptQuick(-500)">-500</button>
+      </div>
+      <div class="fld">
+        <label>事由</label>
+        <select id="ptReason" style="width:100%;height:42px;padding:0 12px;border:1px solid var(--line-2);
+                border-radius:var(--r);background:#fff;font-size:13.5px;color:var(--ink)">
+          ${Object.entries(reasons).map(([k, v]) => `<option value="${esc(k)}">${esc(v)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="fld">
+        <label>备注（选填 · 写进操作日志，也会发到用户站内信）</label>
+        <input id="ptNote" maxlength="200" placeholder="如：国庆打卡活动第 1 名">
+      </div>
+      <div id="ptPrev" style="font-size:13px;color:var(--ink-2);background:var(--green-l);
+           border-radius:var(--r);padding:10px 13px;margin-bottom:12px"></div>
+      <div id="ptErr" style="display:none;color:var(--red);font-size:12.5px;margin-bottom:10px"></div>
+      <div style="display:flex;gap:9px">
+        <button class="btn btn-primary" style="flex:1" onclick="submitPoints()">保存</button>
+        <button class="btn btn-ghost" onclick="closeModal()">取消</button>
+      </div>
+    </div>`);
+  ptCalc();
+}
+
+function ptDir() { return parseInt((document.querySelector('input[name=ptDir]:checked') || {}).value || '1'); }
+
+function ptQuick(n) {
+  const r = document.querySelector(`input[name=ptDir][value="${n > 0 ? '1' : '-1'}"]`);
+  if (r) r.checked = true;
+  document.getElementById('ptAmt').value = Math.abs(n);
+  ptCalc();
+}
+
+function ptCalc() {
+  const u = (window._userItems || []).find(x => x.id === _ptUid);
+  const box = document.getElementById('ptPrev');
+  if (!u || !box) return;
+  const amt = parseInt(document.getElementById('ptAmt').value, 10) || 0;
+  const delta = ptDir() * amt;
+  const after = Math.max(0, u.points + delta);
+  box.innerHTML = amt > 0
+    ? `调整后：<b style="font-size:15px;color:var(--green)">${after}</b>
+       <span style="color:var(--ink-3)">（${u.points} ${delta > 0 ? '+' : '-'} ${amt}）</span>
+       ${after < u.points && after === 0 ? '<div style="color:var(--red);margin-top:4px">注意：已扣到 0 分</div>' : ''}`
+    : '<span style="color:var(--ink-3)">输入数量后这里会显示调整后的积分</span>';
+}
+
+async function submitPoints() {
+  const err = document.getElementById('ptErr');
+  const amtEl = document.getElementById('ptAmt');
+  const amt = parseInt(amtEl.value, 10);
+  if (!amt || amt <= 0) { err.textContent = '请输入大于 0 的积分数量'; err.style.display = 'block'; return; }
+  if (amt > 100000) { err.textContent = '单次调整不能超过 100000 积分'; err.style.display = 'block'; return; }
+  err.style.display = 'none';
+  try {
+    const d = await api(`/api/admin/users/${_ptUid}/points`, {method: 'POST', body: JSON.stringify({
+      amount: ptDir() * amt,
+      reason: document.getElementById('ptReason').value,
+      note: document.getElementById('ptNote').value.trim(),
+    })});
+    toast(`已${ptDir() > 0 ? '增加' : '扣减'} ${amt} 积分，当前 ${d.points}`, 'ok');
+    closeModal();
+    renderUsers();
+  } catch (e) { err.textContent = e.message; err.style.display = 'block'; }
+}
+
+async function openPointLogs(uid, name) {
+  let items = [];
+  try {
+    items = (await api(`/api/admin/users/${uid}/point-logs?limit=100`)).items;
+  } catch (e) { toast(e.message, 'err'); return; }
+  openModal(`
+    <div class="modal-head"><h2>积分流水 · ${esc(name)}</h2><button class="x" onclick="closeModal()">×</button></div>
+    <div style="padding:18px 22px">
+      ${items.length ? `
+        <table>
+          <thead><tr><th>时间</th><th>变动</th><th>事由</th></tr></thead>
+          <tbody>${items.map(it => `
+            <tr>
+              <td class="mono" style="font-size:12px;color:var(--ink-3)">${esc((it.created_at || '').replace('T', ' ').slice(0, 19))}</td>
+              <td style="font-weight:600;color:${it.delta > 0 ? 'var(--green)' : 'var(--red)'}">${it.delta > 0 ? '+' : ''}${it.delta}</td>
+              <td style="font-size:13px">${esc(POINT_REASON_CN[it.reason] || it.reason)}</td>
+            </tr>`).join('')}</tbody>
+        </table>` : '<div class="empty">暂无积分流水</div>'}
+    </div>`);
 }
 
 async function banUser(uid, banned, name) {
@@ -1158,6 +1301,7 @@ async function renderLogs() {
       review_approve:'审核通过', review_reject:'审核驳回', admin_edit_spot:'后台编辑',
       admin_delete_spot:'删除营地', order_paid:'订单支付', ban:'封禁用户', unban:'解封用户',
       seed:'数据初始化', exchange_membership:'积分兑换', rotate_key:'换发密钥',
+      adj_points:'手动调整积分',
       issue_admin_key:'签发管理员密钥', demote_admin:'撤销管理员权限',
     };
     $('#content').innerHTML = `

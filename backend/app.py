@@ -31,11 +31,11 @@ import maintenance
 import notify
 import ratelimit
 import tileproxy
-from common import (FACILITY_KEYS, PLANS, POINT_EXCHANGE, POINT_RULES,
-                    SPOT_TYPES, TOKEN_TTL, add_days, client_ip, current_user,
-                    grant_daily_login, issue_token, mask, normalize_images,
-                    require_admin, require_user, serialize_spot, unique_user_no,
-                    user_public)
+from common import (FACILITY_KEYS, MANUAL_POINT_REASONS, PLANS, POINT_EXCHANGE,
+                    POINT_RULES, SPOT_TYPES, TOKEN_TTL, add_days, client_ip,
+                    current_user, grant_daily_login, issue_token, mask,
+                    normalize_images, require_admin, require_user, serialize_spot,
+                    unique_user_no, user_public)
 from geo import haversine_m, wgs84_to_gcj02
 from logsetup import access as access_log
 from logsetup import log
@@ -1210,6 +1210,69 @@ def admin_set_membership(uid: int, body: dict, admin=Depends(require_admin)):
                 "user": user_public(conn, uid)}
 
 
+@app.post("/api/admin/users/{uid}/points")
+def admin_adjust_points(uid: int, body: dict, admin=Depends(require_admin)):
+    """手动给用户增加或扣减积分。
+
+    和手动调会员是同一类需求：线下活动承诺了奖励要发、投诉要给补偿、
+    有人刷分或提交了垃圾营地要把已发的分扣回去。
+
+    积分能兑换会员天数（见 POINT_EXCHANGE），等于间接影响付费权益，
+    所以和会员改动一样三重留痕：审计日志、point_logs 流水、站内信通知本人。
+    """
+    try:
+        amount = int(body.get("amount") or 0)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "积分变动值必须是整数")
+    if amount == 0:
+        raise HTTPException(400, "变动值不能为 0")
+    if abs(amount) > 100000:
+        raise HTTPException(400, "单次调整不能超过 100000 积分")
+
+    reason = (body.get("reason") or "other").strip()
+    if reason not in MANUAL_POINT_REASONS:
+        raise HTTPException(400, f"不支持的事由，可选：{sorted(MANUAL_POINT_REASONS)}")
+    note = (body.get("note") or "").strip()[:200]
+
+    with db.get_conn() as conn:
+        row = conn.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+        if not row:
+            raise HTTPException(404, "用户不存在")
+
+        before = row["points"]
+        if before + amount < 0:
+            raise HTTPException(400, f"扣减后积分为负，当前 {before}，最多只能扣 {before}")
+
+        after = db.add_points(conn, uid, amount, f"admin_{reason}")
+
+        db.audit(conn, admin["id"], "adj_points", f"user:{uid}",
+                 f"{before} → {after}（{'增加' if amount > 0 else '扣减'}{abs(amount)}）"
+                 f"｜{MANUAL_POINT_REASONS[reason]}" + (f"｜{note}" if note else ""))
+
+        why = MANUAL_POINT_REASONS[reason] + (f"：{note}" if note else "")
+        if amount > 0:
+            notify.notify(conn, uid, "points", "积分已增加",
+                          f"管理员为你增加了 {amount} 积分，当前共 {after} 积分。事由：{why}。")
+        else:
+            notify.notify(conn, uid, "points", "积分已扣减",
+                          f"管理员扣减了 {abs(amount)} 积分，当前共 {after} 积分。"
+                          f"事由：{why}。如有疑问请联系客服。")
+
+        return {"ok": True, "points": after, "delta": amount,
+                "user": user_public(conn, uid)}
+
+
+@app.get("/api/admin/users/{uid}/point-logs")
+def admin_user_point_logs(uid: int, limit: int = Query(50, ge=1, le=200),
+                          admin=Depends(require_admin)):
+    """某个用户的积分流水，人工调整前后核账用。"""
+    with db.get_conn() as conn:
+        rows = conn.execute(
+            "SELECT delta, reason, ref_id, created_at FROM point_logs"
+            " WHERE user_id=? ORDER BY id DESC LIMIT ?", (uid, limit)).fetchall()
+        return {"items": [db.row_to_dict(r) for r in rows]}
+
+
 @app.get("/api/admin/admins")
 def admin_list(admin=Depends(require_admin)):
     """管理员列表。只返回编号和密钥末 4 位，不返回任何可用于登录的信息。"""
@@ -1270,6 +1333,7 @@ def meta():
             demo_keys = None
     return {"spot_types": SPOT_TYPES, "facility_keys": FACILITY_KEYS,
             "point_rules": POINT_RULES, "plans": PLANS,
+            "manual_point_reasons": MANUAL_POINT_REASONS,
             "free_quota": FREE_DAILY_DETAIL_QUOTA,
             "dev": config.DEV, "demo_keys": demo_keys,
             # 非空 = 前端走自建瓦片代理，而不是让浏览器直连源站
