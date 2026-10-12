@@ -15,6 +15,8 @@
 路由形态：  /tiles/{upstream}/{path}
   例：/tiles/ofm/styles/liberty          -> https://tiles.openfreemap.org/styles/liberty
       /tiles/ofm/planet/5/26/12.pbf      -> https://tiles.openfreemap.org/planet/5/26/12.pbf
+      /tiles/sat/World_Imagery/MapServer/tile/5/12/26
+                                         -> https://server.arcgisonline.com/ArcGIS/rest/services/…
 
 样式 JSON 里的绝对 URL 会被改写成同源的 /tiles/ofm/...，否则 MapLibre 还是会
 直连源站，代理就白做了。
@@ -48,6 +50,12 @@ DEFAULT_UPSTREAMS = {
         "origin": "https://tiles.openfreemap.org",
         "enabled": True,
         "note": "OpenFreeMap 公开实例：免费、无 Key、允许商用",
+    },
+    "sat": {
+        "origin": "https://server.arcgisonline.com/ArcGIS/rest/services",
+        "enabled": True,
+        "note": "Esri World Imagery 卫星影像：无 Key 无配额，但免费条款限"
+                "「产品本身不产生收入」，本站接通支付前须换成天地图或自建影像",
     },
     "osm": {
         "origin": "https://tile.openstreetmap.org",
@@ -132,6 +140,14 @@ def _lock_for(key: str) -> threading.Lock:
 _ALLOWED_PATH = set(
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~/ ")
 
+# 查询串额外放行的字符。WMTS 的 KVP 接口把参数放在 ?后面（天地图 img_w 就是
+# .../img_w/wmts?…&LAYER=img&TILEMATRIX={z}…&tk=KEY），不放行就代理不了这类源，
+# "想换合规图源只要改一行配置"就成了空话。
+# 安全性：请求的 host 只能取自白名单里的 upstreamKey，调用方改不了，所以放行
+# 查询字符并不会多出 SSRF 面——最多让服务器向已配置好的源站多发一个带参数的请求。
+# 仍然禁止多个 ?（把别的东西塞进来）和 #（fragment）。
+_ALLOWED_QUERY = _ALLOWED_PATH | set("?&=%+")
+
 
 def _safe_rest(rest: str) -> str:
     """只允许瓦片路径该有的字符。挡掉 ../ 之类的目录穿越和奇怪的查询串。
@@ -140,15 +156,22 @@ def _safe_rest(rest: str) -> str:
     所以先解码再校验，回源时再按标准编码回去——否则中文地名和带空格的字体
     会被自己的安全校验误杀掉。
     """
-    if not rest or "\\" in rest:
+    if not rest or "\\" in rest or "#" in rest:
         raise HTTPException(400, "非法的瓦片路径")
     rest = urllib.parse.unquote(rest)
-    if ".." in rest:
+    head, sep, tail = rest.partition("?")
+    if ".." in head:
         raise HTTPException(400, "非法的瓦片路径")
-    for ch in rest:
+    for ch in head:
         if ch not in _ALLOWED_PATH:
             raise HTTPException(400, "非法的瓦片路径")
-    return rest.strip("/")
+    if sep:
+        if "?" in tail or tail.count("&") > 16:      # 别在查询串里塞东西
+            raise HTTPException(400, "非法的瓦片路径")
+        for ch in tail:
+            if ch not in _ALLOWED_QUERY:
+                raise HTTPException(400, "非法的瓦片路径")
+    return head.strip("/") + (sep + tail if sep else "")
 
 
 def _cache_files(up: str, rest: str):
@@ -209,8 +232,9 @@ def _write_cache(up: str, rest: str, ctype: str, data: bytes):
 
 def _fetch(origin: str, rest: str):
     """回源取一块瓦片。返回 (status, body, ctype)。"""
-    # rest 可能是"解码后"的路径（含空格、中文），按标准百分号编码拼回 URL
-    url = origin + "/" + urllib.parse.quote(rest, safe="/-._~")
+    # rest 可能是"解码后"的路径（含空格、中文），按标准百分号编码拼回 URL。
+    # 查询串里的 ? & = % + 要保持原样，否则 KVP 型 WMTS（天地图）的参数会被编码掉。
+    url = origin + "/" + urllib.parse.quote(rest, safe="/-._~?&=%+")
     req = urllib.request.Request(url, headers={
         "User-Agent": UA,
         # 不要二次压缩：瓦片本身已是压缩数据，gzip 只会让改写 JSON 更麻烦
@@ -393,6 +417,13 @@ def handle(request: Request, up: str, rest: str) -> Response:
     if not _hotlink_ok(request):
         log.info("瓦片盗链被拒 up=%s ref=%s", up, request.headers.get("referer"))
         raise HTTPException(403, "瓦片仅限本站使用")
+
+    # {rest:path} 只匹配**路径**部分，查询串被 Starlette 单独收进 request.url.query，
+    # 不会自动出现在 rest 里。不显式拼回去，WMTS-KVP 型图源（天地图 img_w 那一类
+    # 把图层/行列号/Key 放在 ? 后面的接口）就会因为缺参数被源站拒绝。
+    q = request.url.query
+    if q:
+        rest = f"{rest}?{q}"
 
     rest = _safe_rest(rest)
     origin = ups[up]["origin"]

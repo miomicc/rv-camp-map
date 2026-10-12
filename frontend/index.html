@@ -455,14 +455,28 @@ function pinSvg(color) {
 const map = L.map('map', {zoomControl:false, attributionControl:true, minZoom:3, maxZoom:18})
              .setView([34.5, 108.9], 5);
 
-/* ---- 底图源：只有 OpenFreeMap ----
-   为什么只剩这一个：
+/* ---- 底图源：标准地图 + 卫星影像 ----
+   为什么只剩这两个：
+     - 原「淡色地图」：和标准地图同源、同一份数据，只是配色不同，留着只是多一个按钮
      - OSM 官方瓦片：政策明确不鼓励收费服务使用，且"可能无通知封禁、无付费档"
-     - Esri 卫星：免费条款要求产品"不产生收入"，会员制站点不满足
      - OpenTopoMap：镜像条款限定非商业用途
-     - Cyclosm / 高德：前者无 SLA；后者属国内源需额外的 GCJ-02 纠偏与授权，此处不必要
-   OpenFreeMap 是 OSM 派生数据，但公开实例**不限量、无需 Key、明确允许商用**
-   （样式 MIT，数据 ODbL），由 MapLibre 渲染，缩放不糊、单块约 20KB。
+     - Cyclosm / 高德：前者无 SLA；后者属国内源需额外的 GCJ-02 纠偏与授权
+
+   标准地图仍是 OpenFreeMap（OSM 派生），公开实例**不限量、无需 Key、明确允许
+   商用**（样式 MIT，数据 ODbL），MapLibre 渲染，缩放不糊、单块约 20KB。
+
+   ⚠️ 关于卫星影像的法律条款，上线前一定要读完这一段：
+   默认用 Esri World Imagery（ArcGIS Online 公开图层），理由是它零 Key、零费用、
+   无需注册、全球覆盖，接口形态 .../MapServer/tile/{z}/{y}/{x}，中国境内多数
+   乡镇级区域实测能到 z18 —— 营位排布、水面、植被、进出道路都看得清，这正是
+   「看营地实际情况」需要的清晰度。但 Esri 免费条款要求使用该图层的**产品本身
+   不产生收入**。本站目前没有接入真实支付、会员由后台人工开通，因此现阶段不冲突；
+   一旦接通收款或开始收费，必须换成下面两种之一：
+     1) 天地图影像 img_w —— 国内唯一合规路径，见文件末尾 COMPLIANT_CN_BASEMAP；
+     2) 自建 Sentinel-2 / Landsat 影像瓦片（ESA/USGS 开放数据，明示允许商用），
+        见 deploy/selfhost-tiles/。
+   换源只要动两处：本文件 sat 的 path + 后端环境变量 RVCAMP_TILE_UPSTREAM_SAT。
+   OpenFreeMap（标准地图）不受这条限制，它是明确允许商用的。
 
    coord 字段决定"底图认哪套坐标"，继而决定标记点用哪套值渲染：
      - wgs84：GPS 原始坐标，无需纠偏（当前全部源都是它）
@@ -475,9 +489,19 @@ const TILE_PROVIDERS = [
   { id:'ofm',    name:'标准地图', kind:'vector', coord:'wgs84', maxZoom:19,
     origin:'https://tiles.openfreemap.org', path:'/styles/liberty', proxy:'/ofm',
     attr:'© OpenFreeMap · © OpenMapTiles · 数据 © OpenStreetMap contributors' },
-  { id:'ofm_p',  name:'淡色地图', kind:'vector', coord:'wgs84', maxZoom:19,
-    origin:'https://tiles.openfreemap.org', path:'/styles/positron', proxy:'/ofm',
-    attr:'© OpenFreeMap · © OpenMapTiles · 数据 © OpenStreetMap contributors' },
+  /* 卫星影像。raster 由 <img> 加载，不依赖 MapLibre，所以那套"矢量组件挂了要
+     降级"的逻辑跟它无关。
+     maxZoom 给 19：Esri 实测到 z19 仍有影像，再往上多半只是同一块图被拉伸，没有
+     新信息，而地图整体 maxZoom=18（见 L.map 初始化），所以这里留一点余量。
+     换源只需改 origin / path，再改后端环境变量 RVCAMP_TILE_UPSTREAM_SAT 即可。
+     备选示例 —— EOX Sentinel-2 无云镶嵌（全球免费，10m/像素，非商业 CC-BY-NC-SA，
+     720p 级别的"看周边环境"够用，看不清单个营位）：
+        origin:'https://tiles.maps.eox.at', proxy:'/sat',
+        path:'/wmts/1.0.0/s2cloudless-2020_3857/default/g/{z}/{y}/{x}.jpg' */
+  { id:'sat',    name:'卫星地图', kind:'raster', coord:'wgs84', maxZoom:19,
+    origin:'https://server.arcgisonline.com/ArcGIS/rest/services',
+    path:'/World_Imagery/MapServer/tile/{z}/{y}/{x}', proxy:'/sat',
+    attr:'卫星影像 © Esri, Maxar, Earthstar Geographics' },
 ];
 
 /* 救急栅格底图：不出现在切换器里，只在 MapLibre 的 CDN 整体挂掉、地图会变
@@ -1750,33 +1774,39 @@ async function boot() {
 }
 
 /* ==================================================================
-   COMPLIANT_CN_BASEMAP —— 面向中国大陆用户上线时，把 TILE_PROVIDERS
-   整体替换成下面这两条（有审图号的合规底图）即可，其余代码无需改动：
+   COMPLIANT_CN_BASEMAP —— 面向中国大陆用户正式运营（尤其开始收费）时的替换方案。
+   用下面这段覆盖 TILE_PROVIDERS，再改两个环境变量，其余代码无需改动：
 
+   // 天地图是 CGCS2000 坐标，民间应用层面与 WGS-84 误差可以忽略，故 coord 仍写
+   // wgs84；若实测有明显偏移，改成 'gcj02'，系统会自动做火星坐标换算。
    const TILE_PROVIDERS = [
-     // 天地图矢量底图（CGCS2000 坐标，等同 WGS-84 用法，不需纠偏）
-     { id:'tdt_v',  name:'天地图矢量', kind:'raster', coord:'wgs84', maxZoom:18,
-       url:'https://t{s}.tianditu.gov.cn/vec_w/wmts?SERVICE=WMTS&REQUEST=GetTile'
-         + '&VERSION=1.0.0&LAYER=vec&STYLE=default&TILEMATRIXSET=w'
-         + '&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=<你的Key>',
-       subdomains:'01234567',
+     { id:'tdt_v', name:'标准地图', kind:'raster', coord:'wgs84', maxZoom:18,
+       origin:'https://t0.tianditu.gov.cn', proxy:'/ofm',
+       path:'/vec_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=vec'
+          + '&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles'
+          + '&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=<你的Key>',
        attr:'© 天地图（国家地理信息公共服务平台）' },
-     // 天地图影像底图
-     { id:'tdt_i',  name:'天地图影像', kind:'raster', coord:'wgs84', maxZoom:18,
-       url:'https://t{s}.tianditu.gov.cn/img_w/wmts?SERVICE=WMTS&REQUEST=GetTile'
-         + '&VERSION=1.0.0&LAYER=img&STYLE=default&TILEMATRIXSET=w'
-         + '&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=<你的Key>',
-       subdomains:'01234567',
+     { id:'tdt_i', name:'卫星地图', kind:'raster', coord:'wgs84', maxZoom:18,
+       origin:'https://t0.tianditu.gov.cn', proxy:'/sat',
+       path:'/img_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=img'
+          + '&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles'
+          + '&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=<你的Key>',
        attr:'© 天地图（国家地理信息公共服务平台）' },
    ];
 
-   Key 申请地址：https://console.tianditu.gov.cn/api/key （个人实名免费，有日配额）
-   注意：Key 写在前端可被抓包，务必在天地图控制台配「Referer 域名白名单」；
-        正式商用建议由后端代理转发瓦片，Key 不出服务端。
-   若改用高德/腾讯（GCJ-02），把 coord 改成 'gcj02'，系统会自动做火星偏移。
+   RVCAMP_TILE_UPSTREAM_OFM=https://t0.tianditu.gov.cn
+   RVCAMP_TILE_UPSTREAM_SAT=https://t0.tianditu.gov.cn
 
-   为什么现在默认不放这个：开发/演示阶段没 Key，且用户体验不到区别；
-   但要正式对外运营（尤其收费），这一替换是必须动作。
+   Key 申请：https://console.tianditu.gov.cn/api/key （个人实名免费，有日配额）
+   ① 「<你的Key>」只是占位符，真 Key 千万不要提交进公开仓库
+   ② 走代理时 Key 只出现在服务端到天地图的请求里，浏览器看不到 —— 这比把 Key
+      写在 JS 里安全得多；代理为此专门放行了查询串里的 ? & =（backend/tileproxy.py）
+   ③ 别配多个服务商的 Key 做灾备：天地图 concurrent/QPS 配额是按 Key 算的，
+      两个 Key 互为主备反而容易同时踩到限流
+
+   为什么现在默认是 OpenFreeMap + Esri 而不是天地图：开发/演示阶段没有 Key，
+   配了反而连演示都跑不起来；而且 OpenFreeMap 明确允许商用，只有 Esri 卫星
+   有"产品不产生收入"的限制 —— 接通收款前换掉卫星那一层即可。
    ================================================================== */
 
 boot();
