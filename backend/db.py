@@ -455,14 +455,69 @@ def _rebuild_users_table(conn) -> None:
     """)
 
 
+def _dedupe_nicknames(conn) -> int:
+    """把历史数据里的重名昵称拆开——这是建唯一索引的前置条件。
+
+    昵称开放自助修改之前，默认昵称（"露营者xxxx"）和早期数据允许重名，
+    库里可能存在几十个同名的人。直接建唯一索引会让整库启动失败，
+    所以先处理：id 最小的保留原名，其余按 "原名2 / 原名3" 依次顺延，
+    并保证新名字不会撞上别人已经占用的名额。
+    """
+    affected = 0
+
+    # 空昵称先补一个默认的，否则下面的失真/拆分没法做
+    empties = conn.execute(
+        "SELECT id, user_no FROM users WHERE nickname IS NULL OR nickname = ''").fetchall()
+    for r in empties:
+        conn.execute("UPDATE users SET nickname=? WHERE id=?",
+                     (unique_nickname(conn, "露营者" + (r["user_no"] or "")[-4:]), r["id"]))
+        affected += 1
+
+    dups = conn.execute(
+        "SELECT nickname FROM users WHERE nickname IS NOT NULL AND nickname != ''"
+        " GROUP BY nickname COLLATE NOCASE HAVING COUNT(*) > 1").fetchall()
+    for d in dups:
+        group = conn.execute(
+            "SELECT id, nickname FROM users WHERE nickname = ? COLLATE NOCASE"
+            " ORDER BY id", (d["nickname"],)).fetchall()
+        for u in group[1:]:        # 第 0 个保留原名
+            conn.execute("UPDATE users SET nickname=? WHERE id=?",
+                         (unique_nickname(conn, u["nickname"]), u["id"]))
+            affected += 1
+    return affected
+
+
+def unique_nickname(conn, base: str) -> str:
+    """生成一个未被占用的昵称：原名被占用就在后面加数字（建房的老李2）。"""
+    base = (base or "露营者").strip() or "露营者"
+    cap = config.NICKNAME_MAX
+    cand = base[:cap]
+    i = 1
+    while conn.execute("SELECT 1 FROM users WHERE nickname = ? COLLATE NOCASE",
+                       (cand,)).fetchone():
+        cand = f"{base[:cap - len(str(i + 1))]}{i + 1}"
+        i += 1
+        if i > 999:               # 极端情况下兜底，避免死循环
+            cand = f"{base[:8]}{secrets.token_hex(3)}"
+            break
+    return cand
+
+
 def _ensure_unique_indexes(conn) -> None:
-    """部分唯一索引：手机号可以为空，但一旦填了就必须唯一。
+    """唯一索引：手机号可以为空，但填了就必须唯一；昵称全站唯一。
+
+    昵称的唯一性靠 db 层兜底（应用层已经查过一次），防止并发写入时出现
+    两个人同时抢同一个昵称的情况。
 
     注意必须放在 migrate() 之后——旧库在列补齐之前建索引会直接报错。
     """
     conn.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone ON users(phone)"
         " WHERE phone IS NOT NULL AND phone != ''")
+    _dedupe_nicknames(conn)
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_nickname ON users(nickname COLLATE NOCASE)"
+        " WHERE nickname IS NOT NULL AND nickname != ''")
 
 
 def init_db() -> None:

@@ -740,7 +740,9 @@ async function renderUsers() {
         <tbody>${d.items.map(u => `
           <tr>
             <td class="mono">${esc(u.user_no || '—')}</td>
-            <td><div class="tname">${esc(u.nickname || '未命名')}</div>
+            <td><div class="tname">${esc(u.nickname || '未命名')}
+                <a href="javascript:;" onclick="openAdminRename(${u.id})" title="代用户改名"
+                   style="font-size:11.5px;color:var(--green);margin-left:6px;text-decoration:underline">改名</a></div>
                 <div class="tsub">密钥末4位 ${esc(u.key_preview || '—')}</div></td>
             <td>
               ${u.is_admin ? '<span class="tag t-gold">管理员</span>' : ''}
@@ -1042,6 +1044,59 @@ async function openPointLogs(uid, name) {
     </div>`);
 }
 
+/* ---------------- 后台代改昵称 ---------------- */
+// 用户起了违规昵称（带联系方式、冒充官方、侮辱性词）时，后台要有出口。
+// 和用户自助改名走同一套校验，只是不受「管理员/官方」敏感词限制，
+// 并且会额外给用户发一条站内信说明是谁改的、为什么改。
+let _renameUid = null;
+
+async function openAdminRename(uid) {
+  const u = (window._userItems || []).find(x => x.id === uid);
+  if (!u) { toast('用户数据已过期，请刷新列表', 'err'); return; }
+  _renameUid = uid;
+  let max = 16;
+  try { max = (await api('/api/meta')).nickname_max || 16; } catch (e) { /* 用默认值 */ }
+
+  openModal(`
+    <div class="modal-head"><h2>修改昵称</h2><button class="x" onclick="closeModal()">×</button></div>
+    <div style="padding:20px 22px">
+      <div style="font-size:12.5px;color:var(--ink-3);line-height:1.9;margin-bottom:16px">
+        ${esc(u.nickname || '未命名')} · 编号 ${esc(u.user_no || '—')}<br>
+        昵称全站唯一，最多 ${max} 个字符，重复或含空格表情都会被拒绝。
+      </div>
+      <div class="fld">
+        <label>新昵称</label>
+        <input id="admNick" maxlength="${max}" value="${esc(u.nickname || '')}"
+               placeholder="输入新昵称" onkeydown="if(event.key==='Enter')submitAdminRename()">
+      </div>
+      <div class="fld">
+        <label>告知用户的理由（选填 · 会发到他的站内信）</label>
+        <input id="admNickNote" maxlength="200" placeholder="如：昵称中含联系方式，已为您调整">
+      </div>
+      <div id="admNickErr" style="display:none;color:var(--red);font-size:12.5px;margin-bottom:10px"></div>
+      <div style="display:flex;gap:9px">
+        <button class="btn btn-primary" style="flex:1" onclick="submitAdminRename()">保存</button>
+        <button class="btn btn-ghost" onclick="closeModal()">取消</button>
+      </div>
+    </div>`);
+  setTimeout(() => { const el = document.getElementById('admNick'); if (el) { el.focus(); el.select(); } }, 60);
+}
+
+async function submitAdminRename() {
+  const err = document.getElementById('admNickErr');
+  const nickname = (document.getElementById('admNick').value || '').trim();
+  if (!nickname) { err.textContent = '请输入新昵称'; err.style.display = 'block'; return; }
+  err.style.display = 'none';
+  try {
+    await api(`/api/admin/users/${_renameUid}/nickname`, {method: 'POST', body: JSON.stringify({
+      nickname, note: document.getElementById('admNickNote').value.trim(),
+    })});
+    toast('昵称已更新', 'ok');
+    closeModal();
+    renderUsers();
+  } catch (e) { err.textContent = e.message; err.style.display = 'block'; }
+}
+
 async function banUser(uid, banned, name) {
   if (!confirm(banned ? `确定封禁「${name}」吗？其登录凭证将立即失效。` : `确定解封「${name}」吗？`)) return;
   try {
@@ -1301,7 +1356,7 @@ async function renderLogs() {
       review_approve:'审核通过', review_reject:'审核驳回', admin_edit_spot:'后台编辑',
       admin_delete_spot:'删除营地', order_paid:'订单支付', ban:'封禁用户', unban:'解封用户',
       seed:'数据初始化', exchange_membership:'积分兑换', rotate_key:'换发密钥',
-      adj_points:'手动调整积分',
+      adj_points:'手动调整积分', rename:'用户修改昵称', admin_rename:'后台修改昵称',
       issue_admin_key:'签发管理员密钥', demote_admin:'撤销管理员权限',
     };
     $('#content').innerHTML = `

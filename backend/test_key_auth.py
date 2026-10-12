@@ -1,9 +1,18 @@
-"""密钥登录全流程测试。用 Python 直接打接口，避免 shell 转义干扰。"""
+"""密钥登录全流程测试。用 Python 直接打接口，避免 shell 转义干扰。
+
+注意：昵称现在全站唯一，测试要用随机后缀，否则跑第二次就会被拒。
+"""
 import json
-import urllib.request
+import os
+import random
+import sqlite3
+import urllib.error
 import urllib.parse
+import urllib.request
 
 B = "http://127.0.0.1:8000"
+DB = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                  "data", "rvcamp.db")
 
 
 def call(method, path, body=None, token=None):
@@ -25,9 +34,21 @@ def line(t):
     print("=" * 66)
 
 
+def captcha_pair():
+    """领密钥现在强制要验证码：取一道并从本地库读出答案（只有测试进程做得到）。"""
+    s, d = call("GET", "/api/captcha")
+    assert s == 200, ("获取验证码失败", s, d)
+    with sqlite3.connect(DB) as k:
+        row = k.execute("SELECT code FROM captchas WHERE id=?", (d["id"],)).fetchone()
+    return d["id"], row[0]
+
+
 # ---------------------------------------------------------------- 1
 line("1. 领取密钥（等效于「注册」，但不需要用户名和密码）")
-st, d = call("POST", "/api/auth/key/issue?nickname=" + urllib.parse.quote("老王"))
+cid, code = captcha_pair()
+st, d = call("POST", "/api/auth/key/issue"
+             f"?nickname={urllib.parse.quote('老王' + str(random.randrange(1000, 9999)))}"
+             f"&captcha_id={cid}&captcha_code={urllib.parse.quote(code)}")
 print(f"  HTTP {st}")
 print(f"  用户编号  : {d['user']['user_no']}")
 print(f"  昵称      : {d['user']['nickname']}")

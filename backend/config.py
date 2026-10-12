@@ -106,6 +106,11 @@ IMAGE_MAX_EDGE = env_int("RVCAMP_IMAGE_MAX_EDGE", 1600)
 THUMB_EDGE = env_int("RVCAMP_THUMB_EDGE", 480)
 JPEG_QUALITY = env_int("RVCAMP_JPEG_QUALITY", 82)
 
+# ---------------------------------------------------------------- 昵称规则
+# 昵称是后台辨认"这个人是谁"的线索，所以要唯一、要看得清。
+NICKNAME_MIN = env_int("RVCAMP_NICKNAME_MIN", 2)
+NICKNAME_MAX = env_int("RVCAMP_NICKNAME_MAX", 16)
+
 # ---------------------------------------------------------------- 限流规则
 # (窗口秒数, 窗口内允许次数)
 RATE_RULES = {
@@ -117,6 +122,7 @@ RATE_RULES = {
     "phone_code":   (600, 3),     # 短信验证码：10 分钟 3 次
     "phone_login":  (600, 10),    # 手机号登录
     "recover":      (86400, 3),   # 密钥找回：每天 3 次
+    "rename":       (3600, 5),    # 改昵称：1 小时 5 次（别让用户反复占名字）
 }
 # 全局兜底：单 IP 所有写请求（POST/PATCH/DELETE）上限
 RATE_WRITE_GLOBAL = (60, 120)

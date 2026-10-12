@@ -391,6 +391,8 @@ const state = {
 
 // 免费用户每天可查看的营地详情条数，启动时从 /api/meta 取真实值
 let QUOTA_LIMIT = 3;
+// 昵称长度限制同样由后端下发，前后端校验保持一致
+let NICK_MIN = 2, NICK_MAX = 16;
 
 /* ---------------- 内置演示数据（后端不可用时使用） ---------------- */
 const DEMO_SPOTS = [
@@ -1287,6 +1289,11 @@ async function loadMember() {
           <div style="font-size:12.5px;color:var(--ink-2)">${ME.is_anonymous ? '匿名密钥账号' : '账号密码账号'}</div>
         </div>
       </div>
+      <div class="key-row" style="cursor:pointer" onclick="openRename()" title="点击修改昵称">
+        <div class="key-k">昵称</div>
+        <div class="key-v"><b>${esc(ME.nickname || '未命名')}</b>
+          <span style="color:var(--green);font-size:12px;margin-left:6px">修改</span></div>
+      </div>
       <div class="key-row"><div class="key-k">用户编号</div><div class="key-v mono">${esc(ME.user_no || '—')}</div></div>
       <div class="key-row"><div class="key-k">用户密钥</div><div class="key-v mono">${'•'.repeat(28)}${esc(ME.key_preview || '')}</div></div>
       <div class="key-row"><div class="key-k">贡献积分</div><div class="key-v"><b style="color:var(--green-d)">${ME.points ?? 0}</b> 分</div></div>
@@ -1344,6 +1351,48 @@ async function rotateKey() {
     renderAcct();
     showKeyCard(d.secret_key, '', false);
   } catch (e) { toast(e.message, 'err'); }
+}
+
+/* ---------------- 修改昵称 ---------------- */
+// 昵称全站唯一：营地评价里别人靠它认你，后台也靠它核对身份，
+// 所以不允许重名，也不允许用「管理员」「官方」这类名头。
+function openRename() {
+  openModal(`
+    <div class="modal-head"><h2>修改昵称</h2><button class="x" onclick="closeModal()">×</button></div>
+    <div style="padding:20px 22px">
+      <div style="font-size:12.5px;color:var(--ink-3);line-height:1.85;margin-bottom:14px">
+        ${NICK_MIN}-${NICK_MAX} 个字符，支持中文、字母、数字、下划线和连字符。<br>
+        昵称<b>全站唯一</b>，不能带空格或表情，也不能叫「管理员」「官方」这类名头。
+      </div>
+      <div class="fld">
+        <label>新昵称</label>
+        <input id="nickIn" maxlength="${NICK_MAX}" value="${esc(ME.nickname || '')}"
+               placeholder="给自己起个好认的名字" onkeydown="if(event.key==='Enter')submitRename()">
+      </div>
+      <div id="nickErr" style="display:none;color:var(--red);font-size:12.5px;margin-bottom:10px"></div>
+      <div style="display:flex;gap:9px">
+        <button class="btn btn-primary" style="flex:1" onclick="submitRename()">保存</button>
+        <button class="btn btn-ghost" onclick="closeModal()">取消</button>
+      </div>
+    </div>`);
+  setTimeout(() => { const el = $('#nickIn'); if (el) { el.focus(); el.select(); } }, 60);
+}
+
+async function submitRename() {
+  const err = $('#nickErr');
+  const nick = ($('#nickIn').value || '').trim();
+  if (!nick) { err.textContent = '请输入昵称'; err.style.display = 'block'; return; }
+  err.style.display = 'none';
+  try {
+    const d = await api('/api/user/nickname', {method: 'POST', body: JSON.stringify({nickname: nick})});
+    ME = d.user;
+    renderAcct();          // 顶栏头像/积分
+    loadMember();          // 重画这一栏
+    toast('昵称已改为「' + d.nickname + '」', 'ok');
+    closeModal();
+  } catch (e) {
+    err.textContent = e.message; err.style.display = 'block';
+  }
 }
 
 function pickPlan(el) {
@@ -1656,6 +1705,8 @@ async function boot() {
     const m = await api('/api/meta');
     API_OK = true;
     QUOTA_LIMIT = m.free_quota || 3;
+    NICK_MIN = m.nickname_min || 2;
+    NICK_MAX = m.nickname_max || 16;
     if (m.demo_keys && m.demo_keys.user_key) DEMO_USER_KEY = m.demo_keys.user_key;
     // 以后端返回的代理前缀为准（空 = 运维显式要求直连源站，那就照办）
     if (m.tile_proxy !== undefined && m.tile_proxy !== TILE_PROXY) {

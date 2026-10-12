@@ -220,12 +220,13 @@ def register(body: RegisterIn, request: Request):
         if exists:
             raise HTTPException(400, "用户名已被占用")
         salt = db.make_salt()
+        nick = _decide_nickname(conn, body.nickname, body.username or "露营者")
         cur = conn.execute(
             "INSERT INTO users(user_no, username, password_hash, salt, nickname, created_at) "
             "VALUES(?,?,?,?,?,?)",
             (unique_user_no(conn), body.username,
              db.hash_password(body.password, salt), salt,
-             body.nickname or body.username, db.now_iso()),
+             nick, db.now_iso()),
         )
         uid = cur.lastrowid
         token = issue_token(conn, uid)
@@ -273,11 +274,11 @@ def issue_key(request: Request, nickname: str = Query(default="", max_length=24)
         else:
             raise HTTPException(500, "密钥生成冲突，请重试")
 
+        nick = _decide_nickname(conn, nickname, f"露营者{db.generate_user_no()[:4]}")
         cur = conn.execute(
             "INSERT INTO users(user_no, secret_key_hash, key_preview, nickname, created_at) "
             "VALUES(?,?,?,?,?)",
-            (unique_user_no(conn), kh, db.key_preview(key),
-             nickname or f"露营者{db.generate_user_no()[:4]}", db.now_iso()),
+            (unique_user_no(conn), kh, db.key_preview(key), nick, db.now_iso()),
         )
         uid = cur.lastrowid
         token = issue_token(conn, uid)
@@ -339,7 +340,8 @@ def issue_admin_key(nickname: str = Query(default="", max_length=24),
             "INSERT INTO users(user_no, secret_key_hash, key_preview, nickname, level,"
             " expire_at, is_admin, created_at) VALUES(?,?,?,?,1,?,1,?)",
             (unique_user_no(conn), kh, db.key_preview(key),
-             nickname or "管理员", "2099-12-31T23:59:59", db.now_iso()),
+             db.unique_nickname(conn, nickname or "管理员"), "2099-12-31T23:59:59",
+             db.now_iso()),
         )
         db.audit(conn, admin["id"], "issue_admin_key", f"user:{cur.lastrowid}",
                  nickname or "管理员")
@@ -396,6 +398,69 @@ def rotate_key(user=Depends(current_user)):
             "secret_key": db.format_key(key),
             "warning": "旧密钥已立即失效，请用新密钥重新登录。",
         }
+
+
+@app.post("/api/user/nickname")
+def change_my_nickname(body: dict, request: Request, user=Depends(require_user)):
+    """用户自助修改昵称。
+
+    为什么要让用户自己改：早期昵称是系统随机生成的"露营者xxxx"，
+    后台用户列表一排同名 nobody 知道谁是谁，活动发奖、违规追溯都对不上号。
+
+    同时挂着三条约束：全站唯一、字符可辨认、不许冒充官方。
+    改完写审计日志（留"改前 → 改后"），管理员后台能看到。
+    """
+    ratelimit.rule("rename", str(user["id"]), "改名太频繁")
+    with db.get_conn() as conn:
+        row = conn.execute("SELECT nickname, is_admin FROM users WHERE id=?",
+                           (user["id"],)).fetchone()
+        try:
+            nick = common.validate_nickname(body.get("nickname"), conn,
+                                            exclude_uid=user["id"],
+                                            allow_privileged=row["is_admin"])
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        before = row["nickname"]
+        conn.execute("UPDATE users SET nickname=? WHERE id=?", (nick, user["id"]))
+        db.audit(conn, user["id"], "rename", f"user:{user['id']}", f"{before} → {nick}")
+        return {"ok": True, "nickname": nick, "user": user_public(conn, user["id"])}
+
+
+@app.post("/api/admin/users/{uid}/nickname")
+def admin_rename_user(uid: int, body: dict, admin=Depends(require_admin)):
+    """后台代改昵称：用户起了违规/冒犯性的名字，或者活动期统一改名时用。
+
+    和用户自助改名的区别只有两点：不受"官方/管理员"敏感词限制（后台本来
+    就可以把人设成运营号），以及会额外给用户发一条站内信说明谁改的。
+    """
+    with db.get_conn() as conn:
+        row = conn.execute("SELECT nickname FROM users WHERE id=?", (uid,)).fetchone()
+        if not row:
+            raise HTTPException(404, "用户不存在")
+        try:
+            nick = common.validate_nickname(body.get("nickname"), conn,
+                                            exclude_uid=uid, allow_privileged=True)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        before = row["nickname"]
+        conn.execute("UPDATE users SET nickname=? WHERE id=?", (nick, uid))
+        note = (body.get("note") or "").strip()[:200]
+        db.audit(conn, admin["id"], "admin_rename", f"user:{uid}",
+                 f"{before} → {nick}" + (f"｜{note}" if note else ""))
+        notify.notify(conn, uid, "system", "昵称已被修改",
+                      f"你的昵称已由管理员改为「{nick}」。"
+                      + (f"原因：{note}" if note else "如有疑问请联系客服。"))
+        return {"ok": True, "nickname": nick, "user": user_public(conn, uid)}
+
+
+def _decide_nickname(conn, raw: str, fallback_base: str) -> str:
+    """注册/领密钥时决定昵称：没填就生成一个不重复的，填了就按规则校验。"""
+    if not (raw or "").strip():
+        return db.unique_nickname(conn, fallback_base)
+    try:
+        return common.validate_nickname(raw, conn)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
 
 @app.get("/api/auth/key/reissue")
@@ -1334,6 +1399,8 @@ def meta():
     return {"spot_types": SPOT_TYPES, "facility_keys": FACILITY_KEYS,
             "point_rules": POINT_RULES, "plans": PLANS,
             "manual_point_reasons": MANUAL_POINT_REASONS,
+            # 昵称是唯一且自助可改的，规则下发给前端保证两边校验一致
+            "nickname_min": common.NICKNAME_MIN, "nickname_max": common.NICKNAME_MAX,
             "free_quota": FREE_DAILY_DETAIL_QUOTA,
             "dev": config.DEV, "demo_keys": demo_keys,
             # 非空 = 前端走自建瓦片代理，而不是让浏览器直连源站

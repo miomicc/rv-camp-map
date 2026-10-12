@@ -5,6 +5,7 @@ serialize_spot / require_user，如果从 app.py 导入就会形成
 app -> routes_extra -> app 的循环导入，所以抽到这一层。
 """
 
+import re
 import secrets
 import time
 
@@ -50,6 +51,21 @@ PLANS = {
 SPOT_TYPES = ["房车营地", "高速服务区", "野外驻车点", "营地酒店", "农家乐营地"]
 FACILITY_KEYS = ["水电桩", "排污口", "淋浴", "卫生间", "洗衣房", "充电桩",
                  "WiFi", "餐厅", "便利店", "儿童设施", "宠物友好", "24小时门禁"]
+
+# ---------------------------------------------------------------- 昵称规则
+# 昵称是后台识别"这个人是谁"的唯一线索。早期没做限制时，
+# 默认昵称（"露营者xxxx"）和手动填的名字可以随便重名，后台一排同名人
+# 根本分不清谁是谁，出问题时也没法追溯。所以现在收口成：
+#   自己可以改 + 全站唯一 + 不允许冒充官方角色。
+NICKNAME_MIN = config.NICKNAME_MIN
+NICKNAME_MAX = config.NICKNAME_MAX
+# 中文 / 字母 / 数字 / 下划线 / 连字符 / 间隔号。不要空格和 emoji：
+# 前者会让搜索和展示错位，后者在后台列表里基本糊成一坨看不清。
+NICKNAME_RE = re.compile(r"^[\u4e00-\u9fa5A-Za-z0-9_\-·]+$")
+# 普通用户不允许把自己叫成这些，避免冒充官方/管理人员去忽悠别人。
+# 管理员自己改或者后台代改时放开（allow_privileged=True）。
+NICKNAME_RESERVED = ("管理员", "官方", "客服", "系统", "房车地图", "营地地图",
+                     "admin", "administrator", "root")
 
 TOKEN_TTL = config.TOKEN_TTL_DAYS * 86400
 
@@ -127,6 +143,52 @@ def mask_phone(phone: str) -> str:
     if not phone or len(phone) < 7:
         return ""
     return phone[:3] + "****" + phone[-4:]
+
+
+# ---------------------------------------------------------------- 昵称
+
+def normalize_nickname(raw: str) -> str:
+    """去掉首尾空白，中间连续空白压成一个——很多人是直接粘贴名字进来的。"""
+    return re.sub(r"\s+", " ", (raw or "")).strip()
+
+
+def nickname_taken(conn, nickname: str, exclude_uid=None) -> bool:
+    """昵称是否已被占用。
+
+    用 COLLATE NOCASE：SQLite 默认按二进制比较，Tom 和 tom 会被当成两个
+    不同的名字，唯一约束就形同虚设了。
+    """
+    sql = "SELECT 1 FROM users WHERE nickname = ? COLLATE NOCASE"
+    args = [nickname]
+    if exclude_uid is not None:
+        sql += " AND id != ?"
+        args.append(int(exclude_uid))
+    return bool(conn.execute(sql, args).fetchone())
+
+
+def validate_nickname(raw, conn, exclude_uid=None, allow_privileged=False) -> str:
+    """校验昵称并返回规范化后的字符串。
+
+    不合规一律抛 ValueError，由路由层转成 400 给前端展示，
+    这样这套规则能同时给用户自己改名、领密钥、后台代改三条路径复用。
+    """
+    nick = normalize_nickname(raw)
+    if len(nick) < NICKNAME_MIN:
+        raise ValueError(f"昵称至少 {NICKNAME_MIN} 个字符")
+    if len(nick) > NICKNAME_MAX:
+        raise ValueError(f"昵称最多 {NICKNAME_MAX} 个字符")
+    if not NICKNAME_RE.match(nick):
+        raise ValueError("昵称只能包含中文、字母、数字、下划线、连字符和间隔号，不能有空格或表情")
+    if nick[0] in "_-·":
+        raise ValueError("昵称不能以符号开头")
+    if not allow_privileged:
+        low = nick.casefold()
+        hit = next((w for w in NICKNAME_RESERVED if w in low), None)
+        if hit:
+            raise ValueError(f"昵称不能含「{hit}」，容易让人误以为是官方人员")
+    if nickname_taken(conn, nick, exclude_uid):
+        raise ValueError(f"昵称「{nick}」已经被占用了，换一个吧")
+    return nick
 
 
 def unique_user_no(conn) -> str:

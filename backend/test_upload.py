@@ -147,8 +147,9 @@ print(f"  创建营地 -> id={d.get('id')} {d.get('message', '')[:30]}")
 # ---------------------------------------------------------------- 8
 line("8. 静态访问上传的图片")
 for u in imgs[:2]:
+    url = B + (u["url"] if isinstance(u, dict) else u)
     try:
-        with urllib.request.urlopen(B + u) as x:
+        with urllib.request.urlopen(url) as x:
             data = x.read()
             kind = "PNG" if data[:4] == b"\x89PNG" else ("JPEG" if data[:2] == b"\xff\xd8" else "?")
             print(f"  GET {u} -> HTTP {x.status}, {len(data)} 字节, 类型 {kind}")
