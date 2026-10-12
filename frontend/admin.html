@@ -733,6 +733,7 @@ async function renderUsers() {
   if (userKw) q.set('keyword', userKw);
   try {
     const d = await api('/api/admin/users?' + q);
+    window._userItems = d.items;   // 弹窗按 id 回查，避免在 HTML 属性里拼用户信息
     $('#userList').innerHTML = d.items.length ? `
       <table>
         <thead><tr><th>用户编号</th><th>昵称</th><th>类型</th><th>积分</th><th>提交营地</th><th>会员到期</th><th>操作</th></tr></thead>
@@ -751,10 +752,11 @@ async function renderUsers() {
             <td>${u.spots_count}</td>
             <td style="font-size:12.5px;color:var(--ink-3)">${u.expire_at ? esc(u.expire_at.slice(0,10)) : '—'}</td>
             <td><div class="acts">
-              ${u.is_admin ? '<span style="color:var(--ink-3);font-size:12.5px">—</span>' :
-                (u.is_banned
+              ${u.is_admin ? '<span style="color:var(--ink-3);font-size:12.5px">—</span>' : `
+                <button class="btn btn-ghost btn-sm" onclick="openMembership(${u.id})">会员</button>
+                ${u.is_banned
                   ? `<button class="btn btn-ghost btn-sm" onclick="banUser(${u.id},0,'${esc(u.nickname)}')">解封</button>`
-                  : `<button class="btn btn-danger btn-sm" onclick="banUser(${u.id},1,'${esc(u.nickname)}')">封禁</button>`)}
+                  : `<button class="btn btn-danger btn-sm" onclick="banUser(${u.id},1,'${esc(u.nickname)}')">封禁</button>`}`}
             </div></td>
           </tr>`).join('')}</tbody>
       </table>
@@ -768,6 +770,134 @@ async function renderUsers() {
 }
 
 function doUserSearch() { userKw = $('#userKw').value.trim(); userPage = 1; renderUsers(); }
+
+/* ---------------- 手动调整会员 ---------------- */
+// 真实支付未接入时，线下转账的用户需要客服人工开通/延期；
+// 也有活动赠送、投诉补偿、退回免费等场景。改动会写审计日志 + 通知用户。
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function addDaysStr(s, n) {
+  const d = new Date(s + 'T00:00:00');
+  d.setDate(d.getDate() + n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+let _memUid = null;
+
+function openMembership(uid) {
+  const u = (window._userItems || []).find(x => x.id === uid);
+  if (!u) { toast('用户数据已过期，请刷新列表', 'err'); return; }
+  _memUid = uid;
+  // 基准日：仍是会员就从原到期日续，已过期则从今天起算
+  const today = todayStr();
+  const base = (u.is_member && u.expire_at && u.expire_at.slice(0, 10) > today)
+    ? u.expire_at.slice(0, 10) : addDaysStr(today, 365);
+  const isMember = u.level === 1;
+
+  openModal(`
+    <div class="modal-head"><h2>调整会员</h2><button class="x" onclick="closeModal()">×</button></div>
+    <div style="padding:20px 22px;max-height:70vh;overflow:auto">
+      <div style="font-size:12.5px;color:var(--ink-3);line-height:1.9;margin-bottom:16px">
+        ${esc(u.nickname || '未命名')} · 编号 ${esc(u.user_no || '—')}<br>
+        当前：${u.is_member ? '<b style="color:var(--green)">赞助会员</b>' : '免费用户'}${u.expire_at ? '，到期 ' + esc(u.expire_at.slice(0, 10)) : ''}
+      </div>
+      <div class="fld">
+        <label>会员类型</label>
+        <div style="display:flex;gap:18px;margin-top:7px">
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+            <input type="radio" name="mLevel" value="1" ${isMember ? 'checked' : ''}
+                   style="width:auto;height:auto;margin:0"> 赞助会员</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+            <input type="radio" name="mLevel" value="0" ${isMember ? '' : 'checked'}
+                   style="width:auto;height:auto;margin:0"> 免费用户</label>
+        </div>
+      </div>
+      <div id="expBox">
+        <div class="fld">
+          <label>到期日期</label>
+          <input type="date" id="mExp" value="${base}">
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 4px">
+          <button class="btn btn-ghost btn-sm" onclick="memAddDays(30)">+30天</button>
+          <button class="btn btn-ghost btn-sm" onclick="memAddDays(90)">+90天</button>
+          <button class="btn btn-ghost btn-sm" onclick="memAddDays(365)">+1年</button>
+          <button class="btn btn-ghost btn-sm" onclick="memAddDays(1095)">+3年</button>
+          <button class="btn btn-ghost btn-sm" onclick="memAddDays(36500)">终身</button>
+        </div>
+      </div>
+      <div class="fld">
+        <label>套餐（选填 · 用于生成订单对账）</label>
+        <select id="mPlan" onchange="memPlanChange()"
+                style="width:100%;height:42px;padding:0 12px;border:1px solid var(--line-2);border-radius:var(--r);background:#fff;font-size:13.5px;color:var(--ink)">
+          <option value="manual">手动调整</option>
+          <option value="basic_3y">普通会员 · 三年（¥99）</option>
+          <option value="lifetime">尊贵会员 · 终身（¥299）</option>
+        </select>
+      </div>
+      <div class="fld">
+        <label>实收金额（元 · 选填，填了才生成订单）</label>
+        <input id="mAmount" type="number" min="0" step="0.01" placeholder="0">
+      </div>
+      <div class="fld">
+        <label>备注（选填 · 写进操作日志）</label>
+        <input id="mNote" maxlength="200" placeholder="如：微信转账已收，人工开通">
+      </div>
+      <div id="mErr" style="display:none;color:var(--red);font-size:12.5px;margin-bottom:10px"></div>
+      <div style="display:flex;gap:9px">
+        <button class="btn btn-primary" style="flex:1" onclick="submitMembership()">保存</button>
+        <button class="btn btn-ghost" onclick="closeModal()">取消</button>
+      </div>
+    </div>`);
+
+  document.querySelectorAll('input[name=mLevel]').forEach(r => r.onchange = memSyncLevel);
+  memSyncLevel();
+}
+
+function memSyncLevel() {
+  const lv = (document.querySelector('input[name=mLevel]:checked') || {}).value;
+  const box = document.getElementById('expBox');
+  if (box) box.style.display = lv === '1' ? '' : 'none';
+}
+
+function memAddDays(n) {
+  const el = document.getElementById('mExp');
+  const today = todayStr();
+  const cur = el.value || today;
+  el.value = addDaysStr(cur > today ? cur : today, n);
+}
+
+function memPlanChange() {
+  const map = {basic_3y: [1095, 99], lifetime: [36500, 299]};
+  const hit = map[document.getElementById('mPlan').value];
+  if (!hit) return;
+  const r = document.querySelector('input[name=mLevel][value="1"]');
+  if (r) { r.checked = true; memSyncLevel(); }
+  memAddDays(hit[0]);
+  document.getElementById('mAmount').value = hit[1];
+}
+
+async function submitMembership() {
+  const err = document.getElementById('mErr');
+  const level = parseInt((document.querySelector('input[name=mLevel]:checked') || {}).value || '0');
+  const body = {
+    level,
+    plan: document.getElementById('mPlan').value,
+    amount_fen: Math.round(parseFloat(document.getElementById('mAmount').value || 0) * 100),
+    note: document.getElementById('mNote').value.trim(),
+  };
+  if (level === 1) {
+    body.expire_at = document.getElementById('mExp').value;
+    if (!body.expire_at) { err.textContent = '请选择到期日期'; err.style.display = 'block'; return; }
+  }
+  try {
+    await api(`/api/admin/users/${_memUid}/membership`, {method: 'POST', body: JSON.stringify(body)});
+    toast(level === 1 ? '已设为赞助会员' : '已改回免费用户', 'ok');
+    closeModal();
+    renderUsers();
+  } catch (e) { err.textContent = e.message; err.style.display = 'block'; }
+}
 
 async function banUser(uid, banned, name) {
   if (!confirm(banned ? `确定封禁「${name}」吗？其登录凭证将立即失效。` : `确定解封「${name}」吗？`)) return;

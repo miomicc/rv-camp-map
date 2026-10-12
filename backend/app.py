@@ -1131,6 +1131,85 @@ def admin_ban_user(uid: int, body: dict, admin=Depends(require_admin)):
         return {"ok": True, "banned": bool(banned)}
 
 
+@app.post("/api/admin/users/{uid}/membership")
+def admin_set_membership(uid: int, body: dict, admin=Depends(require_admin)):
+    """手动调整某个用户的会员类型和到期时间。
+
+    需要这个口子的真实场景：
+      - 真实支付还没接，用户线下转账后由客服人工开通
+      - 活动赠送、投诉补偿、误扣需要延期
+      - 用户要求退回免费
+
+    这是能直接改变用户权益的高危操作，所以三重留痕：
+    审计日志记"改前 → 改后"、给用户发站内信、填了金额还补一条已支付订单便于对账。
+    """
+    level = body.get("level")
+    if level not in (0, 1):
+        raise HTTPException(400, "会员类型只能是 0（免费）或 1（赞助会员）")
+    level = int(level)
+
+    raw_exp = (body.get("expire_at") or "").strip()
+    plan = (body.get("plan") or "manual").strip()
+    amount_fen = int(body.get("amount_fen") or 0)
+    note = (body.get("note") or "").strip()[:200]
+
+    with db.get_conn() as conn:
+        row = conn.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+        if not row:
+            raise HTTPException(404, "用户不存在")
+        if row["is_admin"]:
+            # 管理员的 is_member 恒为真，改 level 不产生任何效果，只会让人困惑
+            raise HTTPException(400, "管理员始终拥有全部权限，无需调整会员")
+
+        before = f"level={row['level']} 到期={row['expire_at'][:10] if row['expire_at'] else '—'}"
+
+        if level == 0:
+            new_exp = None
+        elif body.get("days"):
+            # 按天数延长：已过期的从今天起算，未过期的在原到期日上叠加
+            try:
+                days = int(body["days"])
+            except (TypeError, ValueError):
+                raise HTTPException(400, "延长天数必须是整数")
+            if not 1 <= days <= 36500:
+                raise HTTPException(400, "延长天数需在 1-36500 之间")
+            base = row["expire_at"] if db.is_member(row) else db.now_iso()
+            new_exp = add_days(base, days)
+        else:
+            if not raw_exp:
+                raise HTTPException(400, "设为赞助会员必须指定到期时间")
+            day = raw_exp[:10]
+            try:
+                time.strptime(day, "%Y-%m-%d")
+            except ValueError:
+                raise HTTPException(400, "到期时间格式应为 YYYY-MM-DD")
+            new_exp = day + "T23:59:59"
+
+        conn.execute("UPDATE users SET level=?, expire_at=? WHERE id=?", (level, new_exp, uid))
+
+        after = f"level={level} 到期={new_exp[:10] if new_exp else '—'}"
+        db.audit(conn, admin["id"], "set_membership", f"user:{uid}",
+                 f"{before} → {after}" + (f"｜{note}" if note else ""))
+
+        # 人工收款场景：补一条已支付订单，让订单页能对上账
+        if level == 1 and amount_fen > 0:
+            conn.execute(
+                "INSERT INTO orders(order_no, user_id, plan, amount_fen, status, channel,"
+                " created_at, paid_at) VALUES(?,?,?,?,1,'manual',?,?)",
+                ("MAN" + time.strftime("%Y%m%d%H%M%S") + db.generate_user_no()[:6],
+                 uid, plan, amount_fen, db.now_iso(), db.now_iso()))
+
+        if level == 1:
+            notify.notify(conn, uid, "member", "赞助会员已开通",
+                          f"有效期至 {new_exp[:10]}。" + ("感谢支持！" if amount_fen else ""))
+        else:
+            notify.notify(conn, uid, "member", "会员已调整为免费",
+                          note or "如有疑问请联系客服。")
+
+        return {"ok": True, "level": level, "expire_at": new_exp,
+                "user": user_public(conn, uid)}
+
+
 @app.get("/api/admin/admins")
 def admin_list(admin=Depends(require_admin)):
     """管理员列表。只返回编号和密钥末 4 位，不返回任何可用于登录的信息。"""
