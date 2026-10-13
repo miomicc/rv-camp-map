@@ -1330,6 +1330,10 @@ function openMember() {
 }
 
 async function loadMember() {
+  // 所有弹窗共用 #modalCard：从用户中心又打开了改名/登录等弹窗时，
+  // 用户中心的 DOM 已被替换掉。这时任何刷新调用都必须静默返回，
+  // 否则就是 "Cannot set properties of null (setting 'innerHTML')"。
+  if (!document.getElementById('meBox')) return;
   if (!API_OK) {
     $('#meBox').innerHTML = `<div class="coord-hint">演示模式：请启动后端服务后使用完整会员功能</div>`;
     $('#keyBox').innerHTML = '';
@@ -1561,9 +1565,10 @@ async function submitRename() {
     const d = await api('/api/user/nickname', {method: 'POST', body: JSON.stringify({nickname: nick})});
     ME = d.user;
     renderAcct();          // 顶栏头像/积分
-    loadMember();          // 重画这一栏
     toast('昵称已改为「' + d.nickname + '」', 'ok');
-    closeModal();
+    // 改名弹窗是把用户中心覆盖掉打开的，回不去原来的 DOM——
+    // 直接重开用户中心，让用户看到新昵称已经生效（比关掉弹窗面对地图更直观）
+    openMember();
   } catch (e) {
     err.textContent = e.message; err.style.display = 'block';
   }
