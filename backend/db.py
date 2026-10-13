@@ -405,8 +405,14 @@ def _ensure_db_dir() -> None:
 @contextmanager
 def get_conn():
     _ensure_db_dir()
+    # timeout=15 是锁等待上限；WAL 让读者不阻塞写者、写者不阻塞读者，
+    # 多 worker（见 deploy/rvcamp.service 的 --workers 2）下必须开，
+    # 否则默认 rollback journal 的读写互斥会让 "database is locked" 集中爆发。
+    # synchronous=NORMAL 是 WAL 下公认的平衡：断电最多丢最后几秒事务，不会损坏。
     conn = sqlite3.connect(DB_PATH, timeout=15)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute("PRAGMA foreign_keys=ON")
     try:
         yield conn

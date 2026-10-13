@@ -240,6 +240,13 @@ def seed(reset: bool = False) -> None:
              "匿名露营者", "2029-10-03T00:00:00", db.now_iso()),
         )
         key_demo_id = cur.lastrowid
+        # 初始赠分也要写流水：否则演示账号的"余额"和"流水"永远对不上，
+        # 后台点开流水看会以为分是凭空来的（正式用户的每一分都有流水可查）
+        conn.execute(
+            "INSERT INTO point_logs(user_id, delta, reason, ref_id, created_at)"
+            " VALUES(?,?,?,?,?)",
+            (key_demo_id, 320, "seed_gift", None, db.now_iso()),
+        )
 
         # --- 营地 ---
         random.seed(20261004)

@@ -161,7 +161,9 @@ def _startup():
 # ---------------------------------------------------------------- 请求模型
 
 class RegisterIn(BaseModel):
-    username: str = Field(min_length=3, max_length=24)
+    # 用户名只允许字母、数字、下划线、连字符：它同时是"没填昵称时的昵称基名"，
+    # 不带白名单的话 "abc$def" 这类用户名会绕过昵称校验直接变成全站可见的昵称
+    username: str = Field(min_length=3, max_length=24, pattern=r"^[a-zA-Z0-9_-]+$")
     password: str = Field(min_length=6, max_length=64)
     nickname: str = Field(default="", max_length=24)
     invite: str = Field(default="", max_length=16)   # 邀请码，选填

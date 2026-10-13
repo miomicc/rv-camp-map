@@ -246,6 +246,12 @@ python maintenance.py --gc-dry   # 孤儿文件只报告不删除
 
 **备份**建议挂 crontab：`deploy/backup.sh`（保留最近 14 份，可配 `BACKUP_REMOTE` 同步到异地）。
 
+**数据库并发**：连接统一开 WAL 模式（`db.get_conn`）+ `synchronous=NORMAL`。
+多 worker 部署（`deploy/rvcamp.service` 默认 `--workers 2`）下必须开——
+默认 rollback journal 是读写互斥的，"database is locked" 会集中爆发。
+备份走 `VACUUM INTO`（在线一致快照，WAL 下无需额外处理）。
+`*.db-wal` / `*.db-shm` 是 WAL 的运行时文件，已加入 `.gitignore`。
+
 **部署**三选一，模板都在 `deploy/`：
 - Docker：`docker compose -f deploy/docker-compose.yml up -d`
 - systemd：把 `deploy/rvcamp.service` 放到 `/etc/systemd/system/`
