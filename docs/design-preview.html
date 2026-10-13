@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>营地地图 · 视觉设计规范 v2.0</title>
+<style>
+/* ============================================================
+   营地地图 视觉设计规范 v2.0 —— 设计令牌
+   ============================================================ */
+:root{
+  /* 主色：深林绿（户外、自然、可信） */
+  --c-primary:#1E5B44; --c-primary-hover:#17493A; --c-primary-active:#123A2E;
+  --c-primary-tint:#E8F1EC; --c-primary-tint-2:#CFE4D9;
+  /* 强调色：落日橙（行动召唤、高亮） */
+  --c-accent:#DE7A38; --c-accent-hover:#C66A2B; --c-accent-tint:#FAEFE5;
+  /* 功能色 */
+  --c-info:#3B7DD8; --c-info-tint:#E9F1FC;
+  --c-gold:#B98A1D; --c-gold-tint:#F8F1DC;
+  --c-danger:#C2402F; --c-danger-tint:#F9E9E6;
+  /* 中性色：带绿灰调，与主色同族 */
+  --c-ink:#182019; --c-ink-2:#4F5A53; --c-ink-3:#87918A;
+  --c-bg:#F5F4EF; --c-card:#FFFFFF; --c-line:#E4E2DA; --c-line-2:#CFCDC3;
+  /* 阴影：三层 + 主色辉光 */
+  --sh-1:0 1px 2px rgba(24,32,25,.05),0 1px 3px rgba(24,32,25,.06);
+  --sh-2:0 2px 6px rgba(24,32,25,.06),0 4px 16px rgba(24,32,25,.08);
+  --sh-3:0 6px 16px rgba(24,32,25,.09),0 16px 44px rgba(24,32,25,.13);
+  --sh-glow:0 4px 14px rgba(30,91,68,.30);
+  /* 圆角 */
+  --r-s:8px; --r-m:12px; --r-l:16px; --r-xl:20px;
+  /* 玻璃（浮于地图之上的面板） */
+  --glass:rgba(255,255,255,.76); --glass-line:rgba(255,255,255,.70);
+  --glass-dark:rgba(20,28,23,.86); --glass-dark-line:rgba(255,255,255,.14);
+}
+*{box-sizing:border-box;margin:0;-webkit-tap-highlight-color:transparent}
+html{scroll-behavior:smooth}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  background:var(--c-bg); color:var(--c-ink); font-size:14px; line-height:1.65;
+  -webkit-font-smoothing:antialiased;
+}
+::selection{background:var(--c-primary-tint-2);color:var(--c-primary-active)}
+.wrap{max-width:1060px;margin:0 auto;padding:0 28px 80px}
+
+/* ---------- 页头 ---------- */
+.hero{padding:64px 0 44px;border-bottom:1px solid var(--c-line);margin-bottom:48px}
+.hero .kicker{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 10px;border-radius:999px;
+  background:var(--c-primary-tint);color:var(--c-primary);font-size:11.5px;font-weight:600;letter-spacing:.5px;margin-bottom:18px}
+.hero h1{font-size:32px;font-weight:700;letter-spacing:-.3px;line-height:1.25}
+.hero h1 em{font-style:normal;color:var(--c-primary)}
+.hero p{margin-top:12px;font-size:15px;color:var(--c-ink-2);max-width:640px}
+.principles{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:28px}
+.principles div{background:var(--c-card);border:1px solid var(--c-line);border-radius:var(--r-m);padding:14px 16px}
+.principles b{display:block;font-size:13.5px;margin-bottom:2px}
+.principles span{font-size:12.5px;color:var(--c-ink-3)}
+
+/* ---------- 章节 ---------- */
+section{margin-bottom:56px}
+.sec-head{display:flex;align-items:baseline;gap:12px;margin-bottom:8px}
+.sec-head .no{font-size:12px;font-weight:700;color:var(--c-primary);font-variant-numeric:tabular-nums}
+.sec-head h2{font-size:20px;font-weight:700;letter-spacing:-.2px}
+.sec-desc{font-size:13px;color:var(--c-ink-3);margin-bottom:22px}
+.card{background:var(--c-card);border:1px solid var(--c-line);border-radius:var(--r-l);box-shadow:var(--sh-1);padding:26px}
+
+/* ---------- 色板 ---------- */
+.swatches{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.sw{border-radius:var(--r-m);overflow:hidden;border:1px solid var(--c-line);background:#fff}
+.sw .c{height:64px;display:flex;align-items:flex-end;padding:8px 10px}
+.sw .c span{font-size:10.5px;font-weight:600;color:rgba(255,255,255,.85);font-variant-numeric:tabular-nums}
+.sw .c.light span{color:var(--c-ink-2)}
+.sw .meta{padding:9px 12px 11px}
+.sw .meta b{font-size:12.5px;display:block}
+.sw .meta span{font-size:11px;color:var(--c-ink-3);display:block;margin-top:1px}
+.sw .meta code{font-size:10.5px;color:var(--c-ink-3);font-family:ui-monospace,Menlo,monospace}
+
+/* ---------- 字体阶梯 ---------- */
+.type-scale{display:flex;flex-direction:column;gap:0}
+.type-row{display:flex;align-items:baseline;gap:22px;padding:11px 0;border-bottom:1px dashed var(--c-line)}
+.type-row:last-child{border-bottom:none}
+.type-row .tag{flex:0 0 128px;font-size:11px;color:var(--c-ink-3);font-variant-numeric:tabular-nums;text-align:right}
+.type-row .use{flex:0 0 150px;font-size:11.5px;color:var(--c-ink-2)}
+.type-row .sample{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ---------- 间距/圆角/阴影 ---------- */
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+.mini{border:1px solid var(--c-line);border-radius:var(--r-m);padding:16px;background:#fff}
+.mini h4{font-size:12px;color:var(--c-ink-3);font-weight:600;margin-bottom:12px;letter-spacing:.3px}
+.sp-bars{display:flex;flex-direction:column;gap:8px}
+.sp-bars .row{display:flex;align-items:center;gap:10px}
+.sp-bars .lab{font-size:10.5px;color:var(--c-ink-3);width:44px;font-variant-numeric:tabular-nums}
+.sp-bars .bar{height:10px;background:linear-gradient(90deg,var(--c-primary),var(--c-primary-tint-2));border-radius:3px}
+.r-demo{display:flex;gap:12px;align-items:flex-end}
+.r-demo div{width:52px;height:52px;background:var(--c-primary-tint);border:1.5px solid var(--c-primary-tint-2)}
+.r-demo span{display:block;text-align:center;font-size:10px;color:var(--c-ink-3);margin-top:5px}
+.sh-demo{display:flex;flex-direction:column;gap:14px}
+.sh-demo div{height:44px;border-radius:var(--r-m);background:#fff;border:1px solid var(--c-line);
+  display:flex;align-items:center;padding:0 16px;font-size:12px;color:var(--c-ink-2)}
+
+/* ---------- 按钮 ---------- */
+.btn-row{display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:18px}
+.btn-row:last-child{margin-bottom:0}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;height:40px;padding:0 18px;
+  border-radius:var(--r-s);font-size:14px;font-weight:500;border:none;cursor:pointer;
+  transition:transform .15s cubic-bezier(.34,1.3,.64,1),box-shadow .15s,background .15s,border-color .15s;white-space:nowrap}
+.btn svg{width:16px;height:16px}
+.btn-primary{background:linear-gradient(135deg,#227354,var(--c-primary));color:#fff;box-shadow:var(--sh-glow)}
+.btn-primary:hover{background:linear-gradient(135deg,var(--c-primary),var(--c-primary-hover));transform:translateY(-1px);
+  box-shadow:0 6px 20px rgba(30,91,68,.36)}
+.btn-primary:active{transform:translateY(0) scale(.98)}
+.btn-ghost{background:#fff;border:1px solid var(--c-line-2);color:var(--c-ink)}
+.btn-ghost:hover{border-color:var(--c-primary);color:var(--c-primary);transform:translateY(-1px);box-shadow:var(--sh-1)}
+.btn-ghost:active{transform:translateY(0) scale(.98)}
+.btn-accent{background:linear-gradient(135deg,#E5873F,var(--c-accent));color:#fff;box-shadow:0 4px 14px rgba(222,122,56,.32)}
+.btn-accent:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(222,122,56,.40)}
+.btn-danger{background:var(--c-danger);color:#fff}
+.btn-danger:hover{background:#A93426;transform:translateY(-1px)}
+.btn:disabled{opacity:.45;cursor:not-allowed;transform:none!important;box-shadow:none}
+.btn-sm{height:32px;padding:0 13px;font-size:13px;border-radius:7px}
+.btn-lg{height:46px;padding:0 24px;font-size:15px;border-radius:10px}
+.btn-pill{border-radius:999px}
+.state-lab{font-size:11px;color:var(--c-ink-3);width:52px;flex:0 0 auto;font-weight:600}
+
+/* ---------- 地图舞台（毛玻璃演示） ---------- */
+.stage{position:relative;height:380px;border-radius:var(--r-l);overflow:hidden;border:1px solid var(--c-line-2);box-shadow:var(--sh-2)}
+.stage svg.map{position:absolute;inset:0;width:100%;height:100%}
+/* 毛玻璃顶栏 */
+.glass-topbar{position:absolute;top:14px;left:14px;right:14px;display:flex;gap:10px;align-items:center;
+  background:var(--glass);backdrop-filter:blur(20px) saturate(1.8);-webkit-backdrop-filter:blur(20px) saturate(1.8);
+  border:1px solid var(--glass-line);border-radius:14px;box-shadow:var(--sh-2);padding:0 14px;height:52px}
+.brand{display:flex;align-items:center;gap:10px;flex:0 0 auto}
+.brand-mark{width:34px;height:34px;border-radius:10px;background:linear-gradient(145deg,#257354,var(--c-primary));
+  display:grid;place-items:center;box-shadow:inset 0 1px 0 rgba(255,255,255,.25),0 2px 6px rgba(30,91,68,.35)}
+.brand-mark svg{width:19px;height:19px}
+.brand-txt b{display:block;font-size:14.5px;font-weight:700;letter-spacing:.2px;line-height:1.15}
+.brand-txt span{display:block;font-size:10.5px;color:var(--c-ink-3);margin-top:1px;letter-spacing:.4px}
+.glass-search{flex:1;max-width:360px;display:flex;align-items:center;gap:8px;height:36px;padding:0 12px;
+  background:rgba(255,255,255,.6);border:1px solid var(--c-line);border-radius:9px;color:var(--c-ink-3)}
+.glass-search svg{width:15px;height:15px;flex:0 0 auto}
+.glass-search input{border:none;outline:none;background:none;width:100%;font-size:13px;color:var(--c-ink)}
+.glass-search input::placeholder{color:var(--c-ink-3)}
+.glass-search:focus-within{border-color:var(--c-primary);box-shadow:0 0 0 3px rgba(30,91,68,.12);background:#fff}
+.topbar-right{margin-left:auto;display:flex;gap:8px;align-items:center}
+.icon-btn{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:rgba(255,255,255,.6);
+  border:1px solid var(--c-line);color:var(--c-ink-2);cursor:pointer;transition:.15s;position:relative}
+.icon-btn:hover{color:var(--c-primary);border-color:var(--c-primary);transform:translateY(-1px)}
+.icon-btn svg{width:17px;height:17px}
+.icon-btn .dot{position:absolute;top:7px;right:8px;width:7px;height:7px;border-radius:50%;background:var(--c-accent);border:1.5px solid #fff}
+.avatar{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#2E7A5C,#1E5B44);color:#fff;
+  display:grid;place-items:center;font-size:13px;font-weight:600;border:2px solid #fff;box-shadow:var(--sh-1);cursor:pointer}
+.vip-badge{height:20px;padding:0 8px;border-radius:999px;background:linear-gradient(135deg,#E4C463,#C9A227);
+  color:#4A3A00;font-size:10.5px;font-weight:700;display:inline-flex;align-items:center;gap:3px;letter-spacing:.3px}
+/* 地图控件（右下） */
+.map-ctrl{position:absolute;right:14px;bottom:56px;display:flex;flex-direction:column;background:var(--glass);
+  backdrop-filter:blur(20px) saturate(1.8);-webkit-backdrop-filter:blur(20px) saturate(1.8);
+  border:1px solid var(--glass-line);border-radius:11px;overflow:hidden;box-shadow:var(--sh-2)}
+.map-ctrl button{width:38px;height:36px;display:grid;place-items:center;color:var(--c-ink-2);cursor:pointer;transition:.12s;border:none;background:none}
+.map-ctrl button:hover{background:rgba(30,91,68,.08);color:var(--c-primary)}
+.map-ctrl button+button{border-top:1px solid rgba(0,0,0,.06)}
+.map-ctrl svg{width:16px;height:16px}
+/* 模式切换（左下胶囊） */
+.seg{position:absolute;left:14px;bottom:16px;display:flex;background:var(--glass);backdrop-filter:blur(20px) saturate(1.8);
+  -webkit-backdrop-filter:blur(20px) saturate(1.8);border:1px solid var(--glass-line);border-radius:999px;padding:4px;box-shadow:var(--sh-2);gap:2px}
+.seg button{height:30px;padding:0 14px;border-radius:999px;font-size:12.5px;font-weight:500;color:var(--c-ink-2);
+  border:none;background:none;cursor:pointer;transition:.18s;display:flex;align-items:center;gap:5px}
+.seg button svg{width:14px;height:14px}
+.seg button.on{background:var(--c-primary);color:#fff;box-shadow:0 2px 8px rgba(30,91,68,.35)}
+.seg button:not(.on):hover{color:var(--c-primary)}
+
+/* ---------- 图钉 / 聚合 / 弹窗 ---------- */
+.pin-demo{display:flex;gap:38px;align-items:flex-end;flex-wrap:wrap}
+.pin-item{display:flex;flex-direction:column;align-items:center;gap:10px}
+.pin-item .cap{font-size:11px;color:var(--c-ink-3)}
+.pin{filter:drop-shadow(0 4px 6px rgba(24,32,25,.28))}
+.cluster-demo{display:flex;gap:26px;align-items:center;flex-wrap:wrap}
+.cl{display:grid;place-items:center;border-radius:50%;font-weight:700;color:#fff;position:relative}
+.cl::after{content:"";position:absolute;inset:-5px;border-radius:50%;border:1.5px solid currentColor;opacity:.35}
+.cl small{position:absolute;bottom:-19px;font-size:10px;color:var(--c-ink-3);font-weight:400;white-space:nowrap}
+.popup{width:250px;background:#fff;border-radius:var(--r-l);overflow:hidden;box-shadow:var(--sh-3);border:1px solid var(--c-line)}
+.popup .ph{height:104px;background:linear-gradient(135deg,#7FA98F,#3E7A5E 60%,#2C5F49);position:relative;display:grid;place-items:center}
+.popup .ph svg{width:40px;height:40px;opacity:.9}
+.popup .ph .tag{position:absolute;top:9px;left:9px;height:20px;padding:0 8px;border-radius:6px;background:var(--glass-dark);
+  backdrop-filter:blur(8px);color:#fff;font-size:10.5px;font-weight:600;display:flex;align-items:center;gap:4px}
+.popup .pb{padding:12px 14px 14px}
+.popup .pb h5{font-size:14.5px;font-weight:700;display:flex;align-items:center;gap:6px}
+.popup .pb h5 .v{font-size:10px;font-weight:700;color:var(--c-gold);background:var(--c-gold-tint);border-radius:4px;padding:1px 5px}
+.popup .pb .loc{font-size:11.5px;color:var(--c-ink-3);margin-top:3px;display:flex;align-items:center;gap:4px}
+.popup .pb .chips{display:flex;gap:5px;margin-top:9px;flex-wrap:wrap}
+.chip{height:21px;padding:0 8px;border-radius:6px;background:var(--c-primary-tint);color:var(--c-primary);
+  font-size:10.5px;font-weight:600;display:inline-flex;align-items:center;gap:3px}
+.chip.gray{background:#F1F0EB;color:var(--c-ink-2)}
+.chip.orange{background:var(--c-accent-tint);color:var(--c-accent-hover)}
+.popup .pb .go{margin-top:11px;width:100%;height:33px;font-size:13px}
+
+/* ---------- 弹窗 ---------- */
+.modal-demo{position:relative;background:
+  linear-gradient(135deg,rgba(24,32,25,.55),rgba(24,32,25,.35));border-radius:var(--r-l);padding:44px 20px;overflow:hidden}
+.modal-demo::before{content:"";position:absolute;inset:0;backdrop-filter:blur(3px)}
+.modal{position:relative;width:400px;margin:0 auto;background:#fff;border-radius:var(--r-xl);box-shadow:var(--sh-3);
+  overflow:hidden;animation:modalIn .28s cubic-bezier(.22,1,.36,1)}
+@keyframes modalIn{from{opacity:0;transform:translateY(14px) scale(.97)}to{opacity:1;transform:none}}
+.modal .mh{padding:22px 24px 0}
+.modal .mh h3{font-size:18px;font-weight:700;letter-spacing:-.2px}
+.modal .mh p{font-size:12.5px;color:var(--c-ink-3);margin-top:4px}
+.modal .mb{padding:18px 24px 22px}
+.modal .mf{padding:14px 24px;border-top:1px solid var(--c-line);display:flex;gap:10px;justify-content:flex-end;background:#FBFAF7}
+.key-box{background:var(--c-bg);border:1px dashed var(--c-line-2);border-radius:var(--r-m);padding:14px;text-align:center}
+.key-box .k{font-family:ui-monospace,Menlo,monospace;font-size:15px;font-weight:600;letter-spacing:1px;color:var(--c-primary);word-break:break-all}
+.key-box .n{font-size:11px;color:var(--c-ink-3);margin-bottom:6px}
+
+/* ---------- 表单 ---------- */
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.field label{display:block;font-size:12.5px;font-weight:600;color:var(--c-ink-2);margin-bottom:6px}
+.field .ipt{display:flex;align-items:center;gap:8px;height:40px;padding:0 12px;background:#fff;
+  border:1px solid var(--c-line-2);border-radius:var(--r-s);transition:.15s}
+.field .ipt:focus-within{border-color:var(--c-primary);box-shadow:0 0 0 3px rgba(30,91,68,.12)}
+.field .ipt svg{width:15px;height:15px;color:var(--c-ink-3);flex:0 0 auto}
+.field .ipt input,.field .ipt select{border:none;outline:none;background:none;width:100%;font-size:13.5px;color:var(--c-ink)}
+.field .hint{font-size:11px;color:var(--c-ink-3);margin-top:5px}
+.field .ipt.err{border-color:var(--c-danger);box-shadow:0 0 0 3px rgba(194,64,47,.10)}
+.field .emsg{font-size:11.5px;color:var(--c-danger);margin-top:5px;display:flex;align-items:center;gap:4px}
+
+/* ---------- Toast ---------- */
+.toast-demo{display:flex;flex-direction:column;gap:12px;align-items:flex-start}
+.toast{display:flex;align-items:center;gap:10px;height:44px;padding:0 18px 0 15px;border-radius:11px;
+  background:var(--glass-dark);backdrop-filter:blur(16px) saturate(1.6);-webkit-backdrop-filter:blur(16px) saturate(1.6);
+  border:1px solid var(--glass-dark-line);color:#fff;font-size:13px;box-shadow:var(--sh-3);
+  animation:toastIn .3s cubic-bezier(.22,1,.36,1)}
+@keyframes toastIn{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:none}}
+.toast .bar{width:3px;height:18px;border-radius:2px;flex:0 0 auto}
+.toast svg{width:16px;height:16px;flex:0 0 auto}
+
+/* ---------- 骨架屏 / 空状态 ---------- */
+.skel-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.skel-card{border:1px solid var(--c-line);border-radius:var(--r-m);overflow:hidden;background:#fff}
+.skel-card .img{height:96px}
+.skel-card .bd{padding:14px}
+.sk{background:linear-gradient(90deg,#EDECE6 25%,#F6F5F1 45%,#EDECE6 65%);background-size:280% 100%;
+  animation:shimmer 1.3s infinite linear;border-radius:6px}
+@keyframes shimmer{from{background-position:120% 0}to{background-position:-120% 0}}
+.empty{text-align:center;padding:34px 20px;border:1.5px dashed var(--c-line-2);border-radius:var(--r-l);background:#FBFAF7}
+.empty svg{width:120px;height:88px;margin-bottom:10px}
+.empty h5{font-size:15px;font-weight:700}
+.empty p{font-size:12.5px;color:var(--c-ink-3);margin:5px 0 16px}
+
+/* ---------- 图标集 ---------- */
+.icons{display:grid;grid-template-columns:repeat(8,1fr);gap:10px}
+.icons .ic{aspect-ratio:1;border:1px solid var(--c-line);border-radius:var(--r-m);display:grid;place-items:center;
+  color:var(--c-ink-2);background:#fff;transition:.15s}
+.icons .ic:hover{color:var(--c-primary);border-color:var(--c-primary-tint-2);transform:translateY(-2px);box-shadow:var(--sh-1)}
+.icons .ic svg{width:21px;height:21px}
+.icons .ic span{font-size:9.5px;color:var(--c-ink-3);margin-top:2px}
+.icons .ic{flex-direction:column;gap:2px}
+
+footer{border-top:1px solid var(--c-line);padding-top:22px;font-size:12px;color:var(--c-ink-3);display:flex;justify-content:space-between}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ================= 页头 ================= -->
+  <div class="hero">
+    <div class="kicker">
+      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 7.2H22l-5.8 4.2 2.2 7-6.4-4.6-6.4 4.6 2.2-7L2 9.2h7.6z"/></svg>
+      视觉设计规范 · DESIGN SYSTEM v2.0
+    </div>
+    <h1>让营地地图看起来像一个<br><em>正经打磨过的产品</em>，而不是演示页</h1>
+    <p>保留现有架构（零构建、零依赖部署），不引入任何框架。这一版从色彩、字体、间距、阴影、动效五个层面建立统一语言，浮在地图上的每一块面板都遵循同一套规则。</p>
+    <div class="principles">
+      <div><b>自然材质</b><span>深林绿 + 落日橙 + 暖白纸感背景，贴合户外露营气质</span></div>
+      <div><b>浮层通透</b><span>地图之上的界面一律毛玻璃，内容不被遮挡、层次清晰</span></div>
+      <div><b>克制动效</b><span>只在该反馈的地方动：悬停浮起、按下回弹、内容滑入</span></div>
+    </div>
+  </div>
+
+  <!-- ================= 1 色板 ================= -->
+  <section>
+    <div class="sec-head"><span class="no">01</span><h2>色板</h2></div>
+    <p class="sec-desc">主色定调「可信的自然」，强调色只留给行动召唤。中性色带轻微绿灰调，和主色同族，避免脏。</p>
+    <div class="card">
+      <div class="swatches">
+        <div class="sw"><div class="c" style="background:#1E5B44"><span>#1E5B44</span></div><div class="meta"><b>主色 · 深林绿</b><span>主按钮 / 链接 / 选中态</span></div></div>
+        <div class="sw"><div class="c" style="background:#17493A"><span>#17493A</span></div><div class="meta"><b>主色悬停</b><span>hover 加深一档</span></div></div>
+        <div class="sw"><div class="c light" style="background:#E8F1EC"><span>#E8F1EC</span></div><div class="meta"><b>主色浅底</b><span>标签 / 选中背景</span></div></div>
+        <div class="sw"><div class="c" style="background:#DE7A38"><span>#DE7A38</span></div><div class="meta"><b>强调 · 落日橙</b><span>核心行动召唤 / 新标识</span></div></div>
+        <div class="sw"><div class="c light" style="background:#FAEFE5"><span>#FAEFE5</span></div><div class="meta"><b>强调浅底</b><span>橙色标签背景</span></div></div>
+        <div class="sw"><div class="c" style="background:#3B7DD8"><span>#3B7DD8</span></div><div class="meta"><b>信息蓝</b><span>提示 / 链接次要态</span></div></div>
+        <div class="sw"><div class="c" style="background:#B98A1D"><span>#B98A1D</span></div><div class="meta"><b>会员金</b><span>VIP 徽章 / 评分</span></div></div>
+        <div class="sw"><div class="c" style="background:#C2402F"><span>#C2402F</span></div><div class="meta"><b>危险红</b><span>删除 / 封禁 / 错误</span></div></div>
+        <div class="sw"><div class="c" style="background:#182019"><span>#182019</span></div><div class="meta"><b>墨色</b><span>标题 / 主文字</span></div></div>
+        <div class="sw"><div class="c" style="background:#4F5A53"><span>#4F5A53</span></div><div class="meta"><b>次级文字</b><span>正文 / 说明</span></div></div>
+        <div class="sw"><div class="c" style="background:#87918A"><span>#87918A</span></div><div class="meta"><b>弱文字</b><span>占位 / 辅助信息</span></div></div>
+        <div class="sw"><div class="c light" style="background:#F5F4EF"><span>#F5F4EF</span></div><div class="meta"><b>页面底色</b><span>暖白纸感，非纯白</span></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 2 字体 ================= -->
+  <section>
+    <div class="sec-head"><span class="no">02</span><h2>字体阶梯</h2></div>
+    <p class="sec-desc">全站只允许这 9 档字号，杜绝 10.5px、11.5px、12.5px 这类随手写的尺寸。中文正文不小于 12px。</p>
+    <div class="card">
+      <div class="type-scale">
+        <div class="type-row"><span class="tag">28px / 700</span><span class="use">空状态大标题</span><span class="sample" style="font-size:28px;font-weight:700;letter-spacing:-.4px">发现身边的营地</span></div>
+        <div class="type-row"><span class="tag">22px / 700</span><span class="use">弹窗标题</span><span class="sample" style="font-size:22px;font-weight:700;letter-spacing:-.3px">你的专属密钥</span></div>
+        <div class="type-row"><span class="tag">18px / 600</span><span class="use">区块标题</span><span class="sample" style="font-size:18px;font-weight:600">邀请有奖</span></div>
+        <div class="type-row"><span class="tag">16px / 600</span><span class="use">卡片标题</span><span class="sample" style="font-size:16px;font-weight:600">白河湾汽车营地</span></div>
+        <div class="type-row"><span class="tag">15px / 500</span><span class="use">强调正文</span><span class="sample" style="font-size:15px;font-weight:500">距离你 12.4 公里</span></div>
+        <div class="type-row"><span class="tag">14px / 400</span><span class="use">正文基准</span><span class="sample" style="font-size:14px">服务端只存储密钥的哈希值，无法还原成明文。</span></div>
+        <div class="type-row"><span class="tag">13px / 400</span><span class="use">辅助正文</span><span class="sample" style="font-size:13px;color:var(--c-ink-2)">水电桩 · 卫浴 · WiFi · 宠物友好</span></div>
+        <div class="type-row"><span class="tag">12px / 400</span><span class="use">说明文字</span><span class="sample" style="font-size:12px;color:var(--c-ink-2)">密钥只显示这一次，请妥善保存</span></div>
+        <div class="type-row"><span class="tag">11px / 600</span><span class="use">徽章 / 标签</span><span class="sample" style="font-size:11px;font-weight:600;letter-spacing:.5px;color:var(--c-ink-3)">USER NO. 10000004</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 3 间距圆角阴影 ================= -->
+  <section>
+    <div class="sec-head"><span class="no">03</span><h2>间距 · 圆角 · 阴影</h2></div>
+    <p class="sec-desc">间距用 4 的倍数；圆角三档对应控件/卡片/弹窗；阴影三层，浮层越高阴影越扩散。</p>
+    <div class="grid-3">
+      <div class="mini"><h4>间距刻度（4 的倍数）</h4>
+        <div class="sp-bars">
+          <div class="row"><span class="lab">4px</span><div class="bar" style="width:8%"></div></div>
+          <div class="row"><span class="lab">8px</span><div class="bar" style="width:16%"></div></div>
+          <div class="row"><span class="lab">12px</span><div class="bar" style="width:25%"></div></div>
+          <div class="row"><span class="lab">16px</span><div class="bar" style="width:33%"></div></div>
+          <div class="row"><span class="lab">20px</span><div class="bar" style="width:41%"></div></div>
+          <div class="row"><span class="lab">24px</span><div class="bar" style="width:50%"></div></div>
+          <div class="row"><span class="lab">32px</span><div class="bar" style="width:66%"></div></div>
+        </div>
+      </div>
+      <div class="mini"><h4>圆角三档</h4>
+        <div class="r-demo">
+          <div><div style="border-radius:8px"></div><span>8 控件</span></div>
+          <div><div style="border-radius:12px"></div><span>12 卡片</span></div>
+          <div><div style="border-radius:16px"></div><span>16 弹窗</span></div>
+        </div>
+        <p style="font-size:11.5px;color:var(--c-ink-3);margin-top:14px">按钮、输入框用小圆角保持利落；卡片、面板中圆角；弹窗、详情大圆角显松弛。</p>
+      </div>
+      <div class="mini"><h4>阴影三层</h4>
+        <div class="sh-demo">
+          <div style="box-shadow:var(--sh-1)">Level 1 · 卡片静置</div>
+          <div style="box-shadow:var(--sh-2)">Level 2 · 悬停浮起</div>
+          <div style="box-shadow:var(--sh-3)">Level 3 · 弹窗 / 下拉</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 4 按钮 ================= -->
+  <section>
+    <div class="sec-head"><span class="no">04</span><h2>按钮与状态</h2></div>
+    <p class="sec-desc">每个可点元素都有五态：默认 / 悬停（上浮 1px + 阴影加深）/ 按下（回弹缩放）/ 禁用 / 键盘聚焦。动效曲线统一 cubic-bezier(.34,1.3,.64,1)，有一点 Q 弹手感。</p>
+    <div class="card">
+      <div class="btn-row"><span class="state-lab">主按钮</span>
+        <button class="btn btn-primary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>添加营地</button>
+        <button class="btn btn-primary" style="transform:translateY(-1px);box-shadow:0 6px 20px rgba(30,91,68,.36)">悬停态</button>
+        <button class="btn btn-primary" style="transform:scale(.98)">按下态</button>
+        <button class="btn btn-primary" disabled>禁用态</button>
+      </div>
+      <div class="btn-row"><span class="state-lab">次按钮</span>
+        <button class="btn btn-ghost">取消</button>
+        <button class="btn btn-ghost" style="transform:translateY(-1px);border-color:var(--c-primary);color:var(--c-primary);box-shadow:var(--sh-1)">悬停态</button>
+        <button class="btn btn-ghost" disabled>禁用态</button>
+      </div>
+      <div class="btn-row"><span class="state-lab">强调</span>
+        <button class="btn btn-accent">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12v6a2 2 0 01-2 2H6a2 2 0 01-2-2v-6M12 3v12m0-12l-4 4m4-4l4 4"/></svg>兑换 90 天</button>
+        <button class="btn btn-danger">封禁用户</button>
+      </div>
+      <div class="btn-row"><span class="state-lab">尺寸</span>
+        <button class="btn btn-primary btn-sm">小 · 32px</button>
+        <button class="btn btn-primary">标准 · 40px</button>
+        <button class="btn btn-primary btn-lg">大 · 46px</button>
+        <button class="btn btn-primary btn-pill">胶囊形</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 5 毛玻璃界面 ================= -->
+  <section>
+    <div class="sec-head"><span class="no">05</span><h2>浮在地图上的界面</h2></div>
+    <p class="sec-desc">顶栏、控件、模式切换一律毛玻璃（半透明 + 背景模糊 + 提饱和），地图不再被实色面板压住。深色 Toast 用同款玻璃保证可读性。</p>
+    <div class="stage">
+      <!-- 抽象地图底 -->
+      <svg class="map" viewBox="0 0 1000 380" preserveAspectRatio="xMidYMid slice">
+        <rect width="1000" height="380" fill="#EDEEE7"/>
+        <path d="M0 260 Q200 230 380 255 T1000 240 V380 H0 Z" fill="#E3EAE0"/>
+        <path d="M120 0 L180 0 L260 380 L200 380 Z" fill="#E7E6DD"/>
+        <path d="M620 0 L680 0 L740 380 L680 380 Z" fill="#E7E6DD"/>
+        <rect x="300" y="60" width="130" height="90" rx="6" fill="#E2E7DC"/>
+        <rect x="480" y="130" width="110" height="70" rx="6" fill="#E2E7DC"/>
+        <rect x="760" y="40" width="140" height="100" rx="6" fill="#E2E7DC"/>
+        <rect x="60" y="40" width="200" height="80" rx="6" fill="#E2E7DC"/>
+        <ellipse cx="860" cy="290" rx="120" ry="55" fill="#DCE7EE"/>
+        <ellipse cx="880" cy="282" rx="70" ry="30" fill="#D3E0EA"/>
+        <g stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" fill="none">
+          <path d="M-20 150 Q300 120 1020 160"/>
+          <path d="M220 -20 L280 400"/>
+          <path d="M650 -20 L700 400"/>
+          <path d="M-20 330 Q400 300 1020 340"/>
+        </g>
+        <g stroke="#F4F3EC" stroke-width="2.5" stroke-dasharray="10 12" fill="none">
+          <path d="M-20 150 Q300 120 1020 160"/>
+        </g>
+      </svg>
+
+      <!-- 毛玻璃顶栏 -->
+      <div class="glass-topbar">
+        <div class="brand">
+          <div class="brand-mark">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-5.6-7-11a7 7 0 0114 0c0 5.4-7 11-7 11z"/><circle cx="12" cy="10" r="2.4"/></svg>
+          </div>
+          <div class="brand-txt"><b>营地地图</b><span>RV CAMP MAP</span></div>
+        </div>
+        <div class="glass-search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+          <input placeholder="搜索营地、城市、高速服务区…">
+        </div>
+        <div class="topbar-right">
+          <span class="vip-badge">
+            <svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor"><path d="M12 2l2.4 7.2H22l-5.8 4.2 2.2 7-6.4-4.6-6.4 4.6 2.2-7L2 9.2h7.6z"/></svg>VIP</span>
+          <div class="icon-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 10-12 0c0 7-3 8-3 8h18s-3-1-3-8M13.7 21a2 2 0 01-3.4 0"/></svg>
+            <span class="dot"></span>
+          </div>
+          <div class="avatar">露</div>
+        </div>
+      </div>
+
+      <!-- 地图控件 -->
+      <div class="map-ctrl">
+        <button><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+        <button><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
+        <button><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2" fill="currentColor"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
+      </div>
+
+      <!-- 模式切换 -->
+      <div class="seg">
+        <button class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 20l-5.5 2V6L9 4m0 16l6-2m-6 2V4m6 14l5.5 2V8L15 6m0 12V6M9 4l6-2"/></svg>标准</button>
+        <button><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.7 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.7-3.8-9S9.5 5.6 12 3z"/></svg>卫星</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 6 地图元素 ================= -->
+  <section>
+    <div class="sec-head"><span class="no">06</span><h2>图钉 · 聚合气泡 · 营地卡片</h2></div>
+    <p class="sec-desc">图钉改 SVG 水滴造型：白边 + 主色 + 内圆点，落地投影。聚合气泡按数量分三档，选中图钉带脉冲光环。营地卡片大圆角 + 顶部氛围图。</p>
+    <div class="card">
+      <div style="display:flex;gap:40px;flex-wrap:wrap;align-items:flex-start">
+        <div>
+          <h4 style="font-size:12px;color:var(--c-ink-3);margin-bottom:18px">图钉四态</h4>
+          <div class="pin-demo">
+            <div class="pin-item">
+              <svg class="pin" width="34" height="44" viewBox="0 0 34 44"><path d="M17 1C8.7 1 2 7.7 2 16c0 11 15 27 15 27s15-16 15-27C32 7.7 25.3 1 17 1z" fill="#1E5B44" stroke="#fff" stroke-width="2.5"/><circle cx="17" cy="16" r="6" fill="#fff"/></svg>
+              <span class="cap">默认 · 营地</span>
+            </div>
+            <div class="pin-item">
+              <svg class="pin" width="34" height="44" viewBox="0 0 34 44"><path d="M17 1C8.7 1 2 7.7 2 16c0 11 15 27 15 27s15-16 15-27C32 7.7 25.3 1 17 1z" fill="#DE7A38" stroke="#fff" stroke-width="2.5"/><circle cx="17" cy="16" r="6" fill="#fff"/></svg>
+              <span class="cap">新提交 · 待审</span>
+            </div>
+            <div class="pin-item">
+              <svg class="pin" width="34" height="44" viewBox="0 0 34 44"><path d="M17 1C8.7 1 2 7.7 2 16c0 11 15 27 15 27s15-16 15-27C32 7.7 25.3 1 17 1z" fill="#87918A" stroke="#fff" stroke-width="2.5"/><circle cx="17" cy="16" r="6" fill="#fff"/></svg>
+              <span class="cap">已停用</span>
+            </div>
+            <div class="pin-item" style="position:relative">
+              <svg class="pin" width="34" height="44" viewBox="0 0 34 44" style="position:relative;z-index:1"><path d="M17 1C8.7 1 2 7.7 2 16c0 11 15 27 15 27s15-16 15-27C32 7.7 25.3 1 17 1z" fill="#123A2E" stroke="#fff" stroke-width="2.5"/><circle cx="17" cy="16" r="6" fill="#fff"/></svg>
+              <span style="position:absolute;top:-8px;left:50%;transform:translateX(-50%);width:44px;height:44px;border-radius:50%;border:2px solid #1E5B44;animation:pulse 1.8s infinite;pointer-events:none"></span>
+              <span class="cap">选中 · 脉冲光环</span>
+            </div>
+          </div>
+        </div>
+        <div>
+          <h4 style="font-size:12px;color:var(--c-ink-3);margin-bottom:18px">聚合气泡三档</h4>
+          <div class="cluster-demo">
+            <div class="cl" style="width:38px;height:38px;font-size:12.5px;background:#CFE4D9;color:#1E5B44">8<small>1–9 浅</small></div>
+            <div class="cl" style="width:44px;height:44px;font-size:14px;background:#3E7A5E;color:#fff">36<small>10–49 中</small></div>
+            <div class="cl" style="width:50px;height:50px;font-size:16px;background:#1E5B44;color:#fff">126<small>50+ 深</small></div>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:36px;padding-top:30px;border-top:1px solid var(--c-line);display:flex;gap:36px;align-items:flex-start;flex-wrap:wrap">
+        <div class="popup">
+          <div class="ph">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V10l7-6 7 6v11M9 21v-5h6v5"/><path d="M9 13h6"/></svg>
+            <span class="tag">
+              <svg viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><path d="M12 2l2.4 7.2H22l-5.8 4.2 2.2 7-6.4-4.6-6.4 4.6 2.2-7L2 9.2h7.6z"/></svg>4.8 · 已认证</span>
+          </div>
+          <div class="pb">
+            <h5>白河湾汽车营地 <span class="v">VIP 推荐</span></h5>
+            <div class="loc">
+              <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 21s-7-5.6-7-11a7 7 0 0114 0c0 5.4-7 11-7 11z"/><circle cx="12" cy="10" r="2.4"/></svg>
+              密云区 · 距你 12.4km</div>
+            <div class="chips"><span class="chip">水电桩</span><span class="chip">卫浴</span><span class="chip gray">¥80/晚</span></div>
+            <button class="btn btn-primary btn-sm go">查看详情</button>
+          </div>
+        </div>
+        <div style="flex:1;min-width:260px">
+          <h4 style="font-size:12px;color:var(--c-ink-3);margin-bottom:10px">设计说明</h4>
+          <ul style="font-size:13px;color:var(--c-ink-2);line-height:2;padding-left:18px">
+            <li>图钉 30×38，锚点对准尖底，弹窗从上方滑出</li>
+            <li>气泡外圈细描边代替生硬白边，数量用等宽数字</li>
+            <li>卡片顶部氛围图 + 认证角标 + 一行地址 + 设施 chips，信息一屏读完</li>
+            <li>「查看详情」主色按钮压在卡片底部，视觉终点明确</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 7 弹窗 ================= -->
+  <section>
+    <div class="sec-head"><span class="no">07</span><h2>弹窗</h2></div>
+    <p class="sec-desc">20px 大圆角 + 分层阴影 + 14px 上浮淡入（0.28s）。底部操作条用暖白底与内容区分隔，主操作永远在右侧。</p>
+    <div class="modal-demo">
+      <div class="modal">
+        <div class="mh"><h3>你的专属密钥已生成</h3><p>请立即保存，密钥只显示这一次</p></div>
+        <div class="mb">
+          <div class="key-box">
+            <div class="n">用户编号 10000004</div>
+            <div class="k">RVCP-8XKM-3QZ7-TW9B</div>
+          </div>
+          <div style="display:flex;gap:10px;margin-top:14px">
+            <button class="btn btn-ghost" style="flex:1">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 012-2h8"/></svg>复制</button>
+            <button class="btn btn-ghost" style="flex:1">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 19h16"/></svg>下载保存</button>
+          </div>
+        </div>
+        <div class="mf">
+          <button class="btn btn-ghost">稍后再说</button>
+          <button class="btn btn-primary">我已保存，开始使用</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 8 反馈 ================= -->
+  <section>
+    <div class="sec-head"><span class="no">08</span><h2>加载 · 空状态 · 消息反馈</h2></div>
+    <p class="sec-desc">等待不靠转圈：列表用骨架屏（微光扫过）；无结果时给一只小插画而不是空白；Toast 用深色毛玻璃 + 左侧色条区分成功/警告/错误。</p>
+    <div class="grid-3">
+      <div class="mini" style="grid-column:span 2">
+        <h4>骨架屏（加载中）</h4>
+        <div class="skel-grid">
+          <div class="skel-card"><div class="img sk" style="border-radius:0"></div><div class="bd"><div class="sk" style="height:14px;width:60%"></div><div class="sk" style="height:10px;width:40%;margin-top:10px"></div><div class="sk" style="height:24px;margin-top:14px"></div></div></div>
+          <div class="skel-card"><div class="img sk" style="border-radius:0"></div><div class="bd"><div class="sk" style="height:14px;width:50%"></div><div class="sk" style="height:10px;width:35%;margin-top:10px"></div><div class="sk" style="height:24px;margin-top:14px"></div></div></div>
+        </div>
+      </div>
+      <div class="mini">
+        <h4>Toast 三态</h4>
+        <div class="toast-demo">
+          <div class="toast"><span class="bar" style="background:#3ECF8E"></span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="#3ECF8E" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>昵称已修改</div>
+          <div class="toast"><span class="bar" style="background:#E8B84B"></span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="#E8B84B" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4m0 4h.01M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>今日免费次数已用完</div>
+          <div class="toast"><span class="bar" style="background:#E06A55"></span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="#E06A55" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6"/></svg>该昵称已被占用</div>
+        </div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:14px">
+      <div class="empty">
+        <svg viewBox="0 0 200 130" fill="none" stroke-linecap="round" stroke-linejoin="round">
+          <ellipse cx="100" cy="112" rx="72" ry="10" fill="#F0EFE8" stroke="none"/>
+          <path d="M62 108 L100 40 L138 108 Z" fill="#fff" stroke="#1E5B44" stroke-width="2.4"/>
+          <path d="M100 40 L100 108" stroke="#CFE4D9" stroke-width="2"/>
+          <path d="M78 108 L100 74 L122 108" stroke="#CFE4D9" stroke-width="2"/>
+          <path d="M100 40 L100 30" stroke="#DE7A38" stroke-width="2.4"/>
+          <path d="M100 30 l7 -5 v10 z" fill="#DE7A38" stroke="none"/>
+          <path d="M150 108 v-22 a6 6 0 016-6 h10 a6 6 0 016 6 v22" stroke="#87918A" stroke-width="2.2"/>
+          <circle cx="158" cy="92" r="3" stroke="#87918A" stroke-width="2.2"/>
+          <path d="M40 108 q6 -18 22 -20" stroke="#CFCDC3" stroke-width="2" stroke-dasharray="1 6"/>
+          <path d="M30 60 q4 -8 0 -14 M40 62 q4 -8 0 -14" stroke="#3E7A5E" stroke-width="2.2"/>
+        </svg>
+        <h5>这一片还没有营地</h5>
+        <p>挪动地图看看别处，或者把你发现的营地分享给大家</p>
+        <button class="btn btn-primary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>添加第一个营地</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 9 表单 ================= -->
+  <section>
+    <div class="sec-head"><span class="no">09</span><h2>表单控件</h2></div>
+    <p class="sec-desc">聚焦时主色描边 + 3px 浅色外环（不用浏览器默认蓝）；错误态红描边 + 红字说明；帮助文字常在输入框下方 5px。</p>
+    <div class="card">
+      <div class="form-grid">
+        <div class="field"><label>昵称</label>
+          <div class="ipt">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            <input value="白河湾营地主" >
+          </div>
+          <div class="hint">2-16 个字符，中英文、数字、下划线</div>
+        </div>
+        <div class="field"><label>邀请码（选填）</label>
+          <div class="ipt err">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>
+            <input value="RV-已失效" >
+          </div>
+          <div class="emsg">
+            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4m0 4h.01"/></svg>邀请码不存在或已过期</div>
+        </div>
+        <div class="field"><label>营地类型</label>
+          <div class="ipt">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V10l7-6 7 6v11M9 21v-5h6v5"/></svg>
+            <select><option>房车营地</option><option>露营基地</option><option>自驾驿站</option></select>
+          </div>
+        </div>
+        <div class="field"><label>价格区间</label>
+          <div class="ipt" style="justify-content:space-between">
+            <span style="font-size:13px;color:var(--c-ink-2)">¥ 60</span>
+            <input type="range" style="accent-color:#1E5B44;width:55%">
+            <span style="font-size:13px;color:var(--c-ink-2)">¥ 180</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 10 图标 ================= -->
+  <section>
+    <div class="sec-head"><span class="no">10</span><h2>图标</h2></div>
+    <p class="sec-desc">统一 1.8px 线性圆头图标，全部内联 SVG（不引 CDN，和瓦片代理一样零外部请求）。以下为全套基础图标预览。</p>
+    <div class="card">
+      <div class="icons">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-5.6-7-11a7 7 0 0114 0c0 5.4-7 11-7 11z"/><circle cx="12" cy="10" r="2.4"/></svg><span>定位</span></div>
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><span>搜索</span></div>
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg><span>新增</span></div>
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg><span>完成</span></div>
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6"/></svg><span>关闭</span></div>
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 7.2H22l-5.8 4.2 2.2 7-6.4-4.6-6.4 4.6 2.2-7L2 9.2h7.6z"/></svg><span>收藏</span></div>
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span>用户</span></div>
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 10-12 0c0 7-3 8-3 8h18s-3-1-3-8M13.7 21a2 2 0 01-3.4 0"/></svg><span>通知</span></div>
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 20l-5.5 2V6L9 4m0 16l6-2m-6 2V4m6 14l5.5 2V8L15 6m0 12V6M9 4l6-2"/></svg><span>图层</span></div>
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.7 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.7-3.8-9S9.5 5.6 12 3z"/></svg><span>卫星</span></div>
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/><circle cx="12" cy="12" r="4"/></svg><span>瞄准</span></div>
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12v6a2 2 0 01-2 2H6a2 2 0 01-2-2v-6M12 3v12m0-12l-4 4m4-4l4 4"/></svg><span>下载</span></div>
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 012-2h8"/></svg><span>复制</span></div>
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg><span>邀请</span></div>
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V10l7-6 7 6v11M9 21v-5h6v5"/></svg><span>营地</span></div>
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 12-9 12S3 17 3 10a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg><span>地图钉</span></div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <span>营地地图 · 视觉设计规范 v2.0 · 2026-10-13</span>
+    <span>确认方向后按 前台 → 后台 顺序实施</span>
+  </footer>
+</div>
+
+<style>
+@keyframes pulse{
+  0%{transform:translateX(-50%) scale(.7);opacity:1}
+  70%{transform:translateX(-50%) scale(1.5);opacity:0}
+  100%{transform:translateX(-50%) scale(1.5);opacity:0}
+}
+</style>
+</body>
+</html>
